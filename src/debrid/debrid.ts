@@ -38,6 +38,8 @@ export interface DebridClient {
    * implementation adds the torrent, looks, and removes what it added (never what the user had).
    */
   checkCached(hashes: string[]): Promise<Record<string, boolean>>
+  /** What the last checkCached added but could not remove again (names or hashes). */
+  readonly cleanupFailures: string[]
   add(magnetOrHash: string): Promise<Transfer>
   status(id: string): Promise<Transfer>
   files(id: string): Promise<DebridFile[]>

@@ -82,8 +82,8 @@ export function buildServer(dante = new Dante(loadConfig())): McpServer {
     },
     async ({ ids, service: s }) => {
       try {
-        const ranked = await dante.checkCache(ids, s)
-        return text(ranked.map(r => `${r.candidate.id}  ${cacheText(r)}  ${r.candidate.name}`).join('\n'))
+        const { ranked, warnings } = await dante.checkCache(ids, s)
+        return text([...ranked.map(r => `${r.candidate.id}  ${cacheText(r)}  ${r.candidate.name}`), ...warnings.map(w => `WARNING: ${w}`)].join('\n'))
       } catch (err) {
         return fail(err)
       }

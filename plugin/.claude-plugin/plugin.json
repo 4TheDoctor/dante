@@ -1,0 +1,9 @@
+{
+  "name": "dante",
+  "version": "0.1.0",
+  "description": "Dante: an AI media concierge. Finds films and series across your engines, checks your debrid cache, picks by your preferences and plays them, with its own Inferno look.",
+  "author": { "name": "The Doc (4TheDoctor)", "url": "https://github.com/4TheDoctor" },
+  "homepage": "https://github.com/4TheDoctor/dante",
+  "license": "MIT",
+  "keywords": ["debrid", "stremio", "media", "mcp"]
+}

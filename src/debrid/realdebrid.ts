@@ -28,6 +28,7 @@ const RD_ERRORS: Record<number, string> = {
  * and removes it again unless the user had it before.
  */
 export class RealDebrid implements DebridClient {
+  cleanupFailures: string[] = []
   readonly service = 'realdebrid' as const
   constructor(
     private readonly apiKey: string,
@@ -62,6 +63,7 @@ export class RealDebrid implements DebridClient {
   }
 
   async checkCached(hashes: string[]): Promise<Record<string, boolean>> {
+    this.cleanupFailures = []
     const before = new Set(((await this.call<RdTorrent[]>('GET', '/torrents?limit=2500')) ?? []).map(t => t.hash?.toLowerCase()))
     const result: Record<string, boolean> = {}
     for (const raw of hashes) {
@@ -77,7 +79,7 @@ export class RealDebrid implements DebridClient {
       } catch {
         result[hash] = false
       } finally {
-        if (id && !before.has(hash)) await this.remove(id).catch(() => {})
+        if (id && !before.has(hash)) await this.remove(id).catch(() => this.cleanupFailures.push(hash))
       }
     }
     return result

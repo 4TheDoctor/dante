@@ -48,7 +48,8 @@ export function streamToCandidate(stream: StremioStream, engine: string, n: numb
   const fileLine = lines.find(l => VIDEO.test(l))
   const name = stream.behaviorHints?.filename ?? fileLine ?? lines[0]
   if (!name) return undefined
-  const folder = lines[0] && lines[0] !== name && !lines[0].startsWith('👤') ? lines[0] : undefined
+  const stem = (s: string) => s.replace(VIDEO, '').trim().toLowerCase()
+  const folder = lines[0] && stem(lines[0]) !== stem(name) && !lines[0].startsWith('👤') ? lines[0] : undefined
   const seeders = /👤\s*(\d+)/u.exec(text)?.[1]
   const source = /⚙️\s*([^\n]+)/u.exec(text)?.[1]?.trim()
   return {

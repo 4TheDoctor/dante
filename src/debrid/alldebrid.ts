@@ -45,6 +45,7 @@ export function flattenAdFiles(nodes: AdFileNode[], prefix = ''): DebridFile[] {
  * read-only cache check: `magnet/upload` adds the magnet and answers `ready: true` when cached.
  */
 export class AllDebrid implements DebridClient {
+  cleanupFailures: string[] = []
   readonly service = 'alldebrid' as const
   constructor(
     private readonly apiKey: string,
@@ -70,6 +71,7 @@ export class AllDebrid implements DebridClient {
   }
 
   async checkCached(hashes: string[]): Promise<Record<string, boolean>> {
+    this.cleanupFailures = []
     if (!hashes.length) return {}
     const before = new Set((await this.allMagnets()).map(m => m.hash?.toLowerCase()).filter(Boolean))
     const data = await this.call<{ magnets: AdMagnet[] }>('/v4/magnet/upload', { 'magnets[]': hashes })
@@ -78,7 +80,9 @@ export class AllDebrid implements DebridClient {
       const hash = (m.hash ?? hashes[i])!.toLowerCase()
       result[hash] = m.error ? false : Boolean(m.ready)
       // Only remove what this check added; never a magnet the user already had.
-      if (!m.error && m.id !== undefined && !before.has(hash)) await this.remove(String(m.id)).catch(() => {})
+      if (!m.error && m.id !== undefined && !before.has(hash)) {
+        await this.remove(String(m.id)).catch(() => this.cleanupFailures.push(m.name ?? hash))
+      }
     }
     return result
   }

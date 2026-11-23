@@ -22,6 +22,7 @@ interface TbTorrent {
 
 /** TorBox. The only one of the three with a read-only cache check (`torrents/checkcached`). */
 export class TorBox implements DebridClient {
+  cleanupFailures: string[] = []
   readonly service = 'torbox' as const
   constructor(
     private readonly apiKey: string,

@@ -26,6 +26,17 @@ describe('AllDebrid', () => {
     expect(calls.every(c => !c.url.includes('KEY'))).toBe(true)
   })
 
+  it('says which magnets it could not remove after a cache check', async () => {
+    const { fetch } = mockFetch([
+      ['POST', /\/v4\.1\/magnet\/status/, () => ({ json: { status: 'success', data: { magnets: [] } } })],
+      ['POST', /\/v4\/magnet\/upload/, () => ({ json: { status: 'success', data: { magnets: [{ id: 3, hash: H1, name: 'Some.Release', ready: false }] } } })],
+      ['POST', /\/v4\/magnet\/delete/, () => ({ json: { status: 'error', error: { code: 'MAGNET_INVALID_ID', message: 'no' } } })],
+    ])
+    const ad = new AllDebrid('KEY', fetch)
+    await ad.checkCached([H1])
+    expect(ad.cleanupFailures).toEqual(['Some.Release'])
+  })
+
   it('flattens nested file trees and reports API errors with their code', async () => {
     expect(
       flattenAdFiles([{ n: 'Show S03', e: [{ n: 'E06.mkv', s: 5, l: 'https://alldebrid.com/f/x' }, { n: 'sample.mkv', s: 1, l: 'https://alldebrid.com/f/y' }] }]),

@@ -134,10 +134,11 @@ export class Dante {
   }
 
   /** Fill in cache status for these results on every configured service (or one). */
-  async checkCache(ids: string[], service?: DebridService): Promise<Ranked[]> {
+  async checkCache(ids: string[], service?: DebridService): Promise<{ ranked: Ranked[]; warnings: string[] }> {
     const ranked = ids.map(id => this.candidate(id))
     const clients = service ? [await this.debrid(service)] : await this.debrids()
     if (!clients.length) throw new Error('no debrid service is configured in dante.toml')
+    const warnings: string[] = []
     for (const client of clients) {
       const pending = ranked.filter(r => r.candidate.infoHash && r.candidate.cache[client.service] === undefined)
       if (!pending.length) continue
@@ -146,8 +147,11 @@ export class Dante {
         const cached = answer[r.candidate.infoHash!.toLowerCase()]
         if (cached !== undefined) r.candidate.cache[client.service] = cached
       }
+      if (client.cleanupFailures.length) {
+        warnings.push(`${client.service}: added to check the cache but could not remove: ${client.cleanupFailures.join(', ')}. Remove them by hand.`)
+      }
     }
-    return ranked
+    return { ranked, warnings }
   }
 
   async add(id: string, service?: DebridService): Promise<TrackedTransfer> {

@@ -40,7 +40,8 @@ export function ensureHome(home = danteHome()): { home: string; created: boolean
   const created = !existsSync(home)
   mkdirSync(home, { recursive: true })
   const template = join(packageRoot(), 'template')
-  for (const file of ['CLAUDE.md', 'dante.toml']) {
+  // dante.toml is written by `dante setup`, never copied: its presence means setup ran.
+  for (const file of ['CLAUDE.md']) {
     const target = join(home, file)
     if (!existsSync(target) && existsSync(join(template, file))) copyFileSync(join(template, file), target)
   }
@@ -64,9 +65,16 @@ export async function launch(extra: string[]): Promise<number> {
   }
   const { home } = ensureHome()
   if (!existsSync(configPath(home))) {
-    process.stderr.write('dante: no dante.toml yet. Run: dante setup\n')
-    return 1
+    if (!process.stdin.isTTY) {
+      process.stderr.write('dante: no dante.toml yet. Run: dante setup\n')
+      return 1
+    }
+    const { runSetup } = await import('./setup.js')
+    const code = await runSetup()
+    if (code !== 0 || !existsSync(configPath(home))) return code
   }
+  const { installTheme } = await import('./setup.js')
+  installTheme()
   process.chdir(home)
   const tty = process.stdout.isTTY && !process.env.DANTE_NO_BACKDROP
   if (tty) process.stdout.write(`\x1b]11;${BACKDROP}\x07`)
