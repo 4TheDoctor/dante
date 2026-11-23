@@ -2,7 +2,8 @@ import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { parseConfig } from '../src/config.js'
+import { homedir } from 'node:os'
+import { parseConfig, resolvePath } from '../src/config.js'
 import { envNameFor, resolveSecret } from '../src/secrets.js'
 import { Dante, matchesEpisode } from '../src/service.js'
 import { renderConfig } from '../src/setup.js'
@@ -25,6 +26,14 @@ describe('matchesEpisode', () => {
     ['Show [HDTV 1080p][Cap.307]', false],
   ])('%s', (name, expected) => {
     expect(matchesEpisode(cand(name), ep)).toBe(expected)
+  })
+})
+
+describe('paths', () => {
+  it('expands ~, keeps absolute paths and puts relative ones in the Dante folder', () => {
+    expect(resolvePath('~/Movies/BDMV', '/h/Dante')).toBe(join(homedir(), 'Movies/BDMV'))
+    expect(resolvePath('/abs/lib', '/h/Dante')).toBe('/abs/lib')
+    expect(resolvePath('library', '/h/Dante')).toBe('/h/Dante/library')
   })
 })
 

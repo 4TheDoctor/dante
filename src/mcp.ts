@@ -4,7 +4,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
 import { prepareBdmv } from './bdmv.js'
-import { danteHome, loadConfig } from './config.js'
+import { danteHome, loadConfig, resolvePath } from './config.js'
 import { runDoctor } from './doctor.js'
 import { planDub } from './dub.js'
 import { cacheText, searchText } from './format.js'
@@ -236,7 +236,7 @@ export function buildServer(dante = new Dante(loadConfig())): McpServer {
     },
     async ({ source_path, name }) => {
       try {
-        const library = join(danteHome(), dante.config.bdmv.library)
+        const library = resolvePath(dante.config.bdmv.library)
         const disc = prepareBdmv(source_path, library, name)
         return text(`Ready: ${disc.path}\nCopied: ${disc.copied.join(', ')}\nSTREAM links to: ${disc.linked}\nOpen it in VLC with Media → Open Disc (Blu-ray, menus on).`)
       } catch (err) {

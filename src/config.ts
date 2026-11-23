@@ -1,12 +1,18 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { parse } from 'smol-toml'
 import { z } from 'zod'
 import type { HdrFormat, Preferences, Resolution } from './types.js'
 
 export function danteHome(): string {
   return process.env.DANTE_HOME || join(homedir(), 'Dante')
+}
+
+/** A folder from dante.toml: "~" expands, relative paths are inside the Dante folder. */
+export function resolvePath(path: string, home = danteHome()): string {
+  if (path === '~' || path.startsWith('~/')) return join(homedir(), path.slice(1))
+  return resolve(home, path)
 }
 
 export function configPath(home = danteHome()): string {
@@ -60,7 +66,7 @@ const schema = z.object({
     .default({ player: 'auto', port: 7879 }),
   bdmv: z
     .object({
-      /** Where menus are copied for full-disc playback; relative to DANTE_HOME. */
+      /** Where menus are copied for full-disc playback; relative to the Dante folder, or ~ or absolute. */
       library: z.string().default('library'),
     })
     .default({ library: 'library' }),
