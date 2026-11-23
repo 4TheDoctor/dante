@@ -10,6 +10,8 @@ Las herramientas para buscar y resolver enlaces ya son maduras. Lo que faltaba e
 resultados, sepa que quieres 4K Dolby Vision con audio en castellano, note que el mejor vídeo no tiene
 castellano pero otra versión sí, y te diga cuál elegir y por qué. Eso es Dante.
 
+Cómo se ve (respuesta ilustrativa, no una transcripción):
+
 ```text
 $ dante
 ◉ ◉ ◉ ○ ○  Tercer círculo: caché · Night of the Living Dead · 6s

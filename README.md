@@ -10,6 +10,8 @@ The tools to search and resolve streams are mature. What was missing is someone 
 knows you want 4K Dolby Vision with Castilian audio, notices that the best picture has no Spanish track but
 another release does, and tells you which one and why. That is Dante.
 
+What it looks like (an illustrative reply, not a transcript):
+
 ```text
 $ dante
 ◉ ◉ ◉ ○ ○  Third circle: cache · Night of the Living Dead · 6s
