@@ -5,14 +5,15 @@
 //   node daemon.js <state.json> <out dir> <width> <height> <scale>
 //
 // width and height are screen pixels; scale is how many of them one pixel of the drawing takes.
-// state.json: { depth, mood, isDone, pace: "full" | "calm" | "off", stop? }, rewritten by the mod as the
+// state.json: { depth, mood, isDone, labels, pace: "full" | "calm" | "off", stop? }, rewritten by the mod as the
 // request moves on. Output: one line per frame, `pit <absolute path> <number>`.
 import { mkdirSync, readFileSync, renameSync, rmdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { encodePng } from './png.js'
-import { Pit, type Goal } from './scene.js'
+import { Pit, type Goal, type Labels } from './scene.js'
 
 interface State extends Goal {
+  labels?: Labels
   pace: 'full' | 'calm' | 'off'
   stop?: boolean
 }
@@ -38,7 +39,7 @@ const w = Math.ceil(W / scale)
 const h = Math.ceil(H / scale)
 const pit = new Pit(w, h)
 const parent = process.ppid
-let state: State = { depth: 0, mood: 'idle', isDone: false, pace: 'full' }
+let state: State = { depth: -1, mood: 'idle', isDone: false, pace: 'full' }
 let mtime = -1
 let seenAt = Date.now()
 let changed = true
@@ -71,6 +72,7 @@ function reload(): void {
     if (stat.mtimeMs === mtime) return
     mtime = stat.mtimeMs
     state = { ...state, ...(JSON.parse(readFileSync(statePath, 'utf8')) as Partial<State>) }
+    if (state.labels !== undefined) pit.labels = state.labels
     changed = true
   } catch {
     // Not written yet, or caught mid-write: the next look reads it whole.

@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { CIRCLES, draw, drawRule, makeScene, PALETTE, toCells, type Mood } from '../plugin/hooks/inferno'
-import { declaredSteps, downloadOf, isDub, pitSize, readFrames, targetOf, taskChange } from '../plugin/hooks/parse'
+import { declaredSteps, downloadOf, factsFrom, isDub, pitSize, shortFacts, readFrames, targetOf, taskChange } from '../plugin/hooks/parse'
 import { advance, isSettled, progressOf } from '../plugin/hooks/progress'
 import { words } from '../plugin/hooks/words'
 import type { Journey } from '../plugin/types'
 
-const journey = (reached: number, status: Journey['status']): Journey => ({ title: 'X', reached, status, startedAt: 0, endedAt: null })
+const journey = (reached: number, status: Journey['status']): Journey => ({ title: 'X', reached, status, startedAt: 0, endedAt: null, did: [], facts: {} })
 const none = { total: 0, done: 0 }
 
 describe('progress down the circles', () => {
@@ -29,7 +29,7 @@ describe('progress down the circles', () => {
   it('stays put and says so on a failure, and rests when nothing is running', () => {
     expect(progressOf({ journey: journey(2, 'failed'), tasks: none, download: null, isWorking: true })).toEqual({ depth: 4, mood: 'failed', isDone: false })
     expect(progressOf({ journey: journey(2, 'running'), tasks: none, download: null, isWorking: false }).mood).toBe('idle')
-    expect(progressOf({ journey: null, tasks: none, download: null, isWorking: true })).toEqual({ depth: 0, mood: 'running', isDone: false })
+    expect(progressOf({ journey: null, tasks: none, download: null, isWorking: true })).toEqual({ depth: -1, mood: 'running', isDone: false })
   })
 
   it('follows the task list of any other request', () => {
@@ -125,6 +125,32 @@ describe('the drawing', () => {
     const tops = [0, 2, 4, 6, 8].map(topOf)
     expect([...tops].sort((a, b) => a - b)).toEqual(tops)
     expect(tops[0]).toBeLessThan(tops[4]!)
+  })
+})
+
+describe('what each step found', () => {
+  const search = 'Night of the Living Dead (1968): 143 results after ranking, from torrentio (145).\n\n1. torrentio:1 …'
+  const cache = 'torrentio:1  AD cached, RD not cached  a.mkv\ntorrentio:8  AD not cached  b.mkv\ntorrentio:9  AD cached  c.mkv\nWARNING: alldebrid: x'
+  it('comes from the tools own words, and is nothing when they do not say', () => {
+    expect(factsFrom('search_streams', { title: 'x', year: 1968 }, search)).toEqual({ results: 143, year: 1968 })
+    expect(factsFrom('search_streams', {}, 'x: 1 result after ranking')).toEqual({ results: 1 })
+    expect(factsFrom('check_cache', {}, cache)).toEqual({ checked: 3, cached: 2, where: 'AllDebrid' })
+    expect(factsFrom('check_cache', {}, 'a  cache unknown  x.mkv')).toEqual({ checked: 1, cached: 0 })
+    expect(factsFrom('add_to_debrid', {}, 'Added to alldebrid (transfer 5): a.mkv. Ready to play.')).toEqual({ where: 'AllDebrid', percent: 100 })
+    expect(factsFrom('add_to_debrid', {}, 'Added to alldebrid (transfer 5): a.mkv. Status: Queued.')).toEqual({ where: 'AllDebrid' })
+    expect(factsFrom('debrid_status', {}, 'torbox 9  Downloading 42%  a.mkv')).toEqual({ where: 'TorBox', percent: 42 })
+    expect(factsFrom('get_links', {}, 'a.mkv · 5.5 GB · via realdebrid\nhttps://x')).toEqual({ where: 'Real-Debrid', percent: 100 })
+    expect(factsFrom('play', {}, 'Playing a.b.mkv in mpv.')).toEqual({ player: 'mpv' })
+    expect(factsFrom('play', {}, 'In Stremio, open x')).toEqual({ player: 'Stremio' })
+    expect(factsFrom('play', {}, 'something else')).toEqual({})
+  })
+
+  it('is short in the rock and spelled out in the legend', () => {
+    const facts = { year: 1968, results: 143, cached: 2, checked: 3, where: 'AllDebrid', percent: 42 }
+    expect(shortFacts(facts)).toEqual(['1968', '143', '2/3', '42%', ''])
+    expect(shortFacts({ percent: 100 })[3]).toBe('OK')
+    expect(words('es').found(facts, 'Example')).toEqual(['Example, 1968', '143 resultados', '2 de 3 en caché, AllDebrid', '42 % en AllDebrid', ''])
+    expect(words('en').found({}, '')).toEqual(['', '', '', '', ''])
   })
 })
 

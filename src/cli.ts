@@ -7,7 +7,7 @@ import { serveMcp, VERSION } from './mcp.js'
 import { Dante } from './service.js'
 import { findTitle } from './title.js'
 
-const HELP = `dante ${VERSION}: an AI media concierge for Claude Code
+const HELP = `dante ${VERSION}: Debrid Aggregator & Navigator Tracker Engine, an AI media concierge for Claude Code
 
   dante                    open Claude Code in your Dante folder, with Dante's tools and look
   dante setup              first-time setup: engines, debrid keys (stored in the Keychain), preferences

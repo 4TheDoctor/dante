@@ -55,6 +55,20 @@ const SPOTS = {
   rain: '6d6a78',
   snow: 'eef8fc',
   coin: 'ffd95a',
+  hide: '2b1a12',
+  hideLight: '6b4630',
+  fur: '1a100c',
+  furLight: '7a5840',
+  cloak: '17131d',
+  cloakLight: '443a52',
+  scale: '2f3d1c',
+  scaleLight: '7d9440',
+  demon: '190b12',
+  demonLight: '7c3644',
+  bone: 'd9cdb4',
+  boneDark: '7a6d56',
+  hull: '24160d',
+  hullLight: '5e3d25',
 } as const
 
 export type SpotName = keyof typeof SPOTS

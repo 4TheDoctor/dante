@@ -1,5 +1,5 @@
 // Pure helpers: no Claude Code imports, so the test suite can run them.
-import type { TaskList, TransferRow } from '../types'
+import type { Facts, TaskList, TransferRow } from '../types'
 import { words, type Lang, type StepId } from './words'
 
 /** Tools Dante's MCP server adds, whatever prefix Claude Code gives them. */
@@ -155,3 +155,54 @@ export function pitSize(columns: number, rows: number, cell: string | undefined)
   const [w, h] = m === null ? [8, 16] : [Number(m[1]), Number(m[2])]
   return { width: columns * w, height: rows * h, scale: Math.max(1, Math.round(w / 3.5)) }
 }
+
+const SERVICES: Record<string, string> = { AD: 'AllDebrid', RD: 'Real-Debrid', TB: 'TorBox', PM: 'Premiumize', DL: 'Debrid-Link', OC: 'Offcloud', ED: 'EasyDebrid', PP: 'PikPak' }
+const named = (service: string): string => Object.values(SERVICES).find(one => one.toLowerCase().replace(/-/g, '') === service.toLowerCase()) ?? service
+
+/** What a finished tool found, read from its own words. Only what it says. */
+export function factsFrom(tool: string, input: unknown, text: string): Facts {
+  const f = fieldsOf(input)
+  switch (tool) {
+    case 'search_streams': {
+      const results = /: (\d+) results? after ranking/.exec(text)
+      const year = num(f.year)
+      return { ...(results === null ? {} : { results: Number(results[1]) }), ...(year === undefined ? {} : { year }) }
+    }
+    case 'check_cache': {
+      const lines = text.split('\n').filter(line => line.trim() !== '' && !line.startsWith('WARNING'))
+      const hits = lines.filter(line => /\b[A-Z]{2} cached\b/.test(line))
+      const service = /\b([A-Z]{2}) cached\b/.exec(hits[0] ?? '')?.[1]
+      return { checked: lines.length, cached: hits.length, ...(service === undefined ? {} : { where: SERVICES[service] ?? service }) }
+    }
+    case 'add_to_debrid':
+    case 'debrid_status': {
+      const row = parseTransfers(tool, text).at(-1)
+      if (row === undefined) return {}
+      const percent = row.ready ? 100 : /^(\d+)%$/.exec(row.status)?.[1]
+      return { where: named(row.service), ...(percent === undefined ? {} : { percent: Number(percent) }) }
+    }
+    case 'get_links': {
+      const via = / · via (\S+)/.exec(text)?.[1]
+      return via === undefined ? {} : { where: named(via), percent: 100 }
+    }
+    case 'play': {
+      const player = /^Playing .* in (\w+)\.?$/m.exec(text)?.[1] ?? (/^In Stremio/.test(text) ? 'Stremio' : undefined)
+      return player === undefined ? {} : { player }
+    }
+    case 'prepare_bdmv':
+      return { player: 'Blu-ray' }
+    case 'audio4films':
+      return { player: 'audio4films' }
+    default:
+      return {}
+  }
+}
+
+/** The facts as cut in the rock: one short word for each of the five steps. */
+export const shortFacts = (facts: Facts): string[] => [
+  facts.year === undefined ? '' : String(facts.year),
+  facts.results === undefined ? '' : String(facts.results),
+  facts.checked === undefined ? '' : `${facts.cached ?? 0}/${facts.checked}`,
+  facts.percent === undefined ? '' : facts.percent >= 100 ? 'OK' : `${facts.percent}%`,
+  facts.player ?? '',
+]

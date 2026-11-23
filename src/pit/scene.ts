@@ -2,12 +2,25 @@
 // has its own punishment; Dante and Virgil walk the ledges and climb down as the request advances,
 // and come out under the stars when it is done. Pixels are palette indexes (palette.ts).
 import { FLAME, LEVELS, RAMP, SPOT, type RampName } from './palette.js'
-import { CERBERUS, DANTE, LUCIFER, SOUL, stamp, textWidth, VIRGIL, write, type Canvas } from './sprites.js'
+import { capitals, CENTAUR, CERBERUS, DANTE, FERRYMAN, GERYON, HEAD, MINOS, SKULL, SOUL, stamp, textWidth, VIRGIL, wrap, write, writeBig, type Canvas } from './sprites.js'
 
 export type Mood = 'idle' | 'running' | 'done' | 'failed'
 
+/** What is cut in the rock: all of it comes from the request itself. */
+export interface Labels {
+  /** The nine circles, top to bottom. */
+  circles: readonly string[]
+  /** What is being looked for; on the tablet over the gate. */
+  title: string
+  /** What each of the five steps found: results, cache, download… Empty until it has. */
+  facts: readonly string[]
+  /** Which of the five steps are done, and which one is under way (-1: none). */
+  lit: readonly boolean[]
+  now: number
+}
+
 export interface Goal {
-  /** 0 = first circle … 8 = ninth; a fraction is the way down to the next. */
+  /** -1 = before the gate; 0 = first circle … 8 = ninth; a fraction is the way down to the next. */
   depth: number
   mood: Mood
   /** The request is finished: out to see the stars. */
@@ -16,6 +29,8 @@ export interface Goal {
 
 export const CIRCLES = 9
 const LAST = CIRCLES - 1
+const LETTERS = ['D', 'A', 'N', 'T', 'E']
+const NO_LABELS: Labels = { circles: [], title: '', facts: [], lit: [], now: -1 }
 const NUMERALS = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX']
 const WALL: readonly RampName[] = ['earth', 'blood', 'earth', 'stone', 'bog', 'fire', 'blood', 'fire', 'ice']
 const FLAME_OF = [1, 0, 0, 0, 0, 0, 0, 0, 2]
@@ -93,6 +108,10 @@ interface Step {
 }
 
 const FIRE_ROWS = 26
+/** Share of the way to the first circle that is the river. */
+const CROSSED = 0.8
+/** And the part before it, through the gate. */
+const BOARDED = 0.24
 /** Hottest value of the fire simulation. */
 const HOTTEST = 36
 const DISTANCES = 64
@@ -101,6 +120,9 @@ const DISTANCES = 64
 export class Pit {
   readonly rings: Ring[] = []
   readonly top: number
+  /** Where the dark wood ends and the Acheron begins. */
+  private readonly bank: number
+  labels: Labels = NO_LABELS
   private readonly cx: number
   // What each pixel is made of, how light it is unlit (in 16ths of a level), and which fire lights it.
   private readonly ramp: Uint8Array
@@ -117,7 +139,7 @@ export class Pit {
   t = 0
   stars = 0
   // Where Virgil is; Dante walks where he has been.
-  private ring = 0
+  private ring = -1
   private along = 0.4
   private climb = 0
   private heading = 1
@@ -129,7 +151,8 @@ export class Pit {
     readonly h: number,
   ) {
     this.cx = (w - 1) / 2
-    this.top = Math.max(40, Math.round(h * 0.125))
+    this.top = Math.max(58, Math.round(h * 0.165))
+    this.bank = this.top - 12
     const tall = (h - this.top - 10) / CIRCLES
     const widest = w * 0.42
     const narrowest = Math.max(20, w * 0.22)
@@ -185,10 +208,12 @@ export class Pit {
   private build(): void {
     for (let y = 0; y < this.h; y++) {
       for (let x = 0; x < this.w; x++) {
-        if (y < this.top) this.put(x, y, 'night', 0.9 - (y / this.top) * 0.9 + cloud(x / 9, y / 5, 3) * 0.7)
+        if (y >= this.bank && y < this.top) this.put(x, y, 'sea', 1.1 + cloud(x / 10, y / 2, 4) * 1.2 - (y - this.bank) * 0.06, 0, 44)
+        else if (y < this.top) this.put(x, y, 'night', 0.9 - (y / this.top) * 0.9 + cloud(x / 9, y / 5, 3) * 0.7)
         else this.buildPit(x, y)
       }
     }
+    this.buildBones()
     this.buildWood()
     this.buildGate()
     this.buildStairs()
@@ -224,7 +249,7 @@ export class Pit {
       const roof = i === 0 ? this.top : this.rings[i - 1]!.y
       const shade = Math.max(0, 1 - (y - roof) / 9)
       const crack = grain.seam < 0.07 ? 1.2 : grain.seam < 0.14 ? 0.4 : 0
-      this.put(x, y, WALL[i]!, 0.5 + curve * 1.5 + grain.id * 0.7 - crack - shade * 1.3, i, Math.max(0, this.back(i, dx) - y))
+      this.put(x, y, WALL[i]!, (i === LAST ? 1.5 : 0.6) + curve * 1.5 + grain.id * 0.7 - crack - shade * 1.3, i, Math.max(0, this.back(i, dx) - y))
       return
     }
     // The rock the pit is cut in: big stones, seams, strata, and a little light at the edge.
@@ -241,12 +266,28 @@ export class Pit {
     this.put(x, y, 'rock', 1.3 + grain.id * 1.4 + strata * 1 - seam, i, 18 + edge * 1.8)
   }
 
+  /** Skulls shut in the rock on either side of the pit. */
+  private buildBones(): void {
+    for (let n = 0; n < 26; n++) {
+      const x = Math.floor(noise(n, 1, 25) * this.w)
+      const y = this.top + 14 + Math.floor(noise(n, 2, 25) * (this.h - this.top - 20))
+      const clear = this.rings.every(ring => Math.abs(y - ring.y) > ring.tall || Math.abs(x - this.cx) > ring.outer + (x > this.cx ? 24 : 17))
+      if (!clear || x < 5 || x > this.w - 6) continue
+      SKULL.forEach((row, j) => {
+        ;[...row].forEach((letter, i) => {
+          if (letter !== '.') this.put(x + i - 2, y + j, 'rock', letter === 'V' ? 0.3 : 3.1 - j * 0.2, -1)
+        })
+      })
+    }
+  }
+
   /** The dark wood: bare trees on both sides of the gate. */
   private buildWood(): void {
-    const ground = this.top - 4
+    const ground = this.bank - 3
     for (let x = 0; x < this.w; x++) {
-      const bump = Math.round(cloud(x / 7, 1, 12) * 3)
-      for (let y = ground - bump; y < this.top; y++) this.put(x, y, 'wood', 1 + noise(x, y, 13) * 1.1)
+      const bump = Math.round(cloud(x / 7, 1, 12) * 2)
+      for (let y = ground - bump; y < this.bank; y++) this.put(x, y, 'wood', 1.6 + noise(x, y, 13) * 1.3)
+      this.put(x, this.bank, 'stone', 2.2 + noise(x, 2, 14) * 1.4)
     }
     const branch = (x: number, y: number, angle: number, length: number, thick: number, n: number): void => {
       const steps = Math.ceil(length)
@@ -276,11 +317,19 @@ export class Pit {
     }
   }
 
+  private gateHeight(): number {
+    return Math.min(27, this.bank - 18)
+  }
+
+  private tabletHalf(): number {
+    return Math.min(46, (this.w >> 1) - 4)
+  }
+
   private buildGate(): void {
     const cx = Math.round(this.cx)
-    const ground = this.top - 1
-    const span = 13
-    const height = Math.min(24, this.top - 18)
+    const ground = this.bank - 1
+    const span = 12
+    const height = this.gateHeight()
     for (let y = ground - height; y <= ground; y++) {
       for (let x = cx - span - 6; x <= cx + span + 6; x++) {
         const ax = Math.abs(x - cx)
@@ -297,9 +346,10 @@ export class Pit {
     }
     // The tablet with the inscription.
     const tabletTop = ground - height - 15
+    const half = this.tabletHalf()
     for (let y = tabletTop; y < tabletTop + 16; y++) {
-      for (let x = cx - 29; x <= cx + 29; x++) {
-        const isEdge = y === tabletTop || y === tabletTop + 15 || Math.abs(x - cx) === 29
+      for (let x = cx - half; x <= cx + half; x++) {
+        const isEdge = y === tabletTop || y === tabletTop + 15 || Math.abs(x - cx) === half
         this.put(x, y, 'stone', isEdge ? 3.6 : 1.9 + noise(x, y, 24) * 0.5, 0, 44)
       }
     }
@@ -310,10 +360,15 @@ export class Pit {
     return i % 2 === 0 ? 0.84 : 0.16
   }
 
+  /** Where the boat lands: the head of the stair down to the first circle. */
+  private landing(): { x: number; y: number } {
+    return { x: this.onLedge(0, 0.16).x + 2, y: this.top - 2 }
+  }
+
   private buildStairs(): void {
-    for (let i = 0; i < LAST; i++) {
-      const from = this.onLedge(i, this.stairAlong(i))
-      const to = this.onLedge(i + 1, this.stairAlong(i))
+    for (let i = -1; i < LAST; i++) {
+      const from = i < 0 ? this.landing() : this.onLedge(i, this.stairAlong(i))
+      const to = this.onLedge(i + 1, i < 0 ? 0.16 : this.stairAlong(i))
       const rise = to.y - from.y
       for (let s = 0; s <= rise; s++) {
         const x = Math.round(from.x + ((to.x - from.x) * s) / rise)
@@ -336,14 +391,28 @@ export class Pit {
 
   /** Virgil walks to where the goal is, taking the stairs; Dante follows his steps. */
   private walk(goal: Goal, dt: number): void {
-    const wanted = Math.max(0, Math.min(LAST, goal.depth))
+    const wanted = Math.max(-1, Math.min(LAST, goal.depth))
     const here = this.ring + this.climb
     if (wanted < here - 0.02 && (wanted < this.ring || this.climb === 0)) {
-      // A new request: back to the first circle.
-      this.ring = Math.floor(wanted)
+      // A new request: back before the gate.
+      this.ring = -1
       this.climb = 0
-      this.along = 0.4
+      this.along = 0.2
       this.trail = []
+    }
+    if (this.ring < 0) {
+      // Over the Acheron in Charon's boat, and down the first stair.
+      if (wanted > -0.999) {
+        this.climb = Math.min(1, this.climb + (this.climb < CROSSED ? 0.2 : 0.3) * (1 + Math.max(0, wanted) * 0.5) * dt)
+        if (this.climb >= CROSSED || this.climb < BOARDED) this.walked += 22 * dt
+        if (this.climb >= 1) {
+          this.ring = 0
+          this.climb = 0
+          this.along = 0.16
+        }
+      }
+      this.remember()
+      return
     }
     // The further behind, the faster.
     const haste = 1 + Math.max(0, wanted - here) * 0.9
@@ -378,13 +447,38 @@ export class Pit {
       this.along += this.heading * pace * 0.55
       this.walked += 14 * dt
     }
+    this.remember()
+  }
+
+  private remember(): void {
     const step = this.virgil()
     const last = this.trail.at(-1)
     if (last === undefined || last.x !== step.x || last.y !== step.y) this.trail.push(step)
     if (this.trail.length > 90) this.trail.shift()
   }
 
+  /** Where the boat floats: at the gate, or on its way over. */
+  private boatX(): number {
+    const from = Math.min(this.w - 32, this.cx + 44)
+    if (this.ring >= 0) return from
+    const over = smooth(Math.max(0, Math.min(1, (this.climb - BOARDED) / (CROSSED - BOARDED))))
+    return Math.round(from + (this.landing().x + 8 - from) * over)
+  }
+
   private virgil(): Step {
+    if (this.ring < 0) {
+      const afloat = Math.round(Math.sin(this.t * 1.7) * 0.8)
+      if (this.climb < BOARDED) {
+        // Out of the dark wood, through the gate, to the boat.
+        const u = this.climb / BOARDED
+        return { x: Math.round(this.cx - 30 + u * 62), y: this.bank + (u > 0.94 ? 2 : 0), right: true }
+      }
+      if (this.climb < CROSSED) return { x: this.boatX() - 8, y: this.top - 5 + afloat, right: false }
+      const down = (this.climb - CROSSED) / (1 - CROSSED)
+      const from = this.landing()
+      const to = this.onLedge(0, 0.16)
+      return { x: Math.round(from.x + (to.x - from.x) * down), y: Math.round(from.y + (to.y - from.y) * down), right: true }
+    }
     if (this.climb > 0 && this.ring < LAST) {
       const side = this.stairAlong(this.ring)
       const from = this.onLedge(this.ring, side)
@@ -395,6 +489,8 @@ export class Pit {
   }
 
   private dante(lead: Step): Step {
+    if (this.ring < 0 && this.climb < BOARDED) return { ...lead, x: lead.x - 15 }
+    if (this.ring < 0 && this.climb < CROSSED + 0.05) return { ...lead, x: lead.x + 14 }
     // Sixteen pixels of Virgil's own path behind him.
     let left = this.ring === LAST ? 13 : 16
     let at: Step = lead
@@ -406,14 +502,14 @@ export class Pit {
     }
     const x = lead.x - (lead.right ? 14 : -14)
     const dx = x - this.cx
-    const ring = this.rings[this.ring]!
+    const ring = this.rings[Math.max(0, this.ring)]!
     const u = Math.min(1, Math.abs(dx) / ring.outer)
     return { x, y: this.climb > 0 ? lead.y : Math.round(ring.y - ring.bow * Math.sqrt(1 - u * u) * 0.72), right: lead.right }
   }
 
   /** How hot each circle burns: embers everywhere, a blaze where the work is. */
   private heatOf(i: number, goal: Goal): number {
-    const near = Math.max(0, 1 - Math.abs(i - (this.ring + this.climb)) / 1.9)
+    const near = this.ring < 0 && this.climb < CROSSED ? 0 : Math.max(0, 1 - Math.abs(i - (this.ring + this.climb)) / 1.9)
     if (goal.mood === 'failed') return 0.55 + near * 0.45
     if (goal.mood === 'running') return 0.14 + near * 0.86
     return 0.1 + near * 0.3
@@ -452,7 +548,7 @@ export class Pit {
   private fly(dt: number, goal: Goal): void {
     const many = goal.mood === 'running' || goal.mood === 'failed' ? 46 : 16
     if (this.sparks.length < many && this.random() < 0.8) {
-      const i = Math.min(LAST - 1, Math.max(0, this.ring + (this.random() < 0.6 ? 0 : Math.floor(this.random() * 4) - 1)))
+      const i = Math.min(LAST - 1, Math.max(1, this.ring + (this.random() < 0.6 ? 0 : Math.floor(this.random() * 4) - 1)))
       const ring = this.rings[i]!
       this.sparks.push({ x: this.cx + (this.random() - 0.5) * 2 * ring.outer * 0.9, y: ring.y - ring.bow * 0.6, vx: 0, vy: -(8 + this.random() * 22), life: 1 + this.random() * 1.6 })
     }
@@ -468,7 +564,7 @@ export class Pit {
 
   /** Nothing left to walk or fade: only the fire moves. */
   isSettled(goal: Goal): boolean {
-    const there = Math.abs(this.ring + this.climb - Math.max(0, Math.min(LAST, goal.depth))) < 0.02
+    const there = Math.abs(this.ring + this.climb - Math.max(-1, Math.min(LAST, goal.depth))) < 0.02
     return there && this.stars === (goal.isDone ? 1 : 0)
   }
 
@@ -519,18 +615,23 @@ export class Pit {
         px[k] = ramp[k]! + (step >= LEVELS ? LEVELS - 1 : step)
       }
     }
+    const lead = this.virgil()
+    const follow = this.dante(lead)
+    this.paintLantern(lead)
     this.paintGate()
+    this.paintAcheron()
     const canvas: Canvas = { w, h, px }
     this.paintFire()
     for (let i = 0; i < CIRCLES; i++) this.paintCircle(i, canvas)
     this.paintRims(goal)
-    const lead = this.virgil()
-    const follow = this.dante(lead)
+    this.paintNames(canvas)
+    this.paintPlaques(goal, canvas)
     const isMoving = this.climb > 0 || goal.mood === 'running' || goal.depth > this.ring + this.climb + 0.01
     const pose = isMoving ? Math.floor(this.walked / 5) % 4 : 0
     const figures: Array<[readonly string[], Step]> = [[VIRGIL[pose]!, lead], [DANTE[(pose + 2) % 4]!, follow]]
     figures.sort((a, b) => a[1].y - b[1].y)
     for (const [art, at] of figures) stamp(canvas, art, at.x, at.y + 1, at.right)
+    this.paintBoat(canvas)
     for (const spark of this.sparks) {
       const x = Math.round(spark.x)
       const y = Math.round(spark.y)
@@ -542,17 +643,106 @@ export class Pit {
     const { w, h, px } = this
     const canvas: Canvas = { w, h, px }
     const cx = Math.round(this.cx)
-    const height = Math.min(24, this.top - 18)
-    const tabletTop = this.top - 1 - height - 15
+    const tabletTop = this.bank - 1 - this.gateHeight() - 15
     const ink = FLAME[0]![4 + Math.round(Math.sin(this.t * 2.2) * 0.6 + 0.6)]!
-    for (const [n, line] of ['LASCIATE OGNE', 'SPERANZA'].entries()) write(canvas, line, cx - (textWidth(line) >> 1), tabletTop + 2 + n * 7, ink)
+    // What is being looked for; with nothing asked, what Dante read there.
+    const wide = Math.floor((this.tabletHalf() * 2 - 3) / 4)
+    const title = capitals(this.labels.title)
+    const lines = title === '' ? ['LASCIATE OGNE', "SPERANZA"] : wrap(title, wide, 2)
+    const first = tabletTop + (lines.length === 1 ? 6 : 2)
+    for (const [n, line] of lines.entries()) write(canvas, line, cx - (textWidth(line) >> 1), first + n * 7, ink)
     // Three pairs of eyes in the wood: the leopard, the lion and the she-wolf.
-    const ground = this.top - 10
+    const ground = this.bank - 10
     const eyes: Array<[number, number]> = [[0.1, ground - 4], [0.86, ground], [0.94, ground - 9]]
     eyes.forEach(([u, y], n) => {
       if (noise(n, Math.floor(this.t * 1.1 + n * 0.7), 60) < 0.22) return
       const x = Math.round(u * w)
       for (const dx of [0, 4]) if (x + dx < w) px[y * w + x + dx] = SPOT.eyeYellow
+    })
+  }
+
+  /** The little light the two carry. */
+  private paintLantern(at: Step): void {
+    const { w, h, px, ramp } = this
+    const cy = at.y - 12
+    for (let y = Math.max(0, cy - 22); y <= Math.min(h - 1, cy + 18); y++) {
+      for (let x = Math.max(0, at.x - 24); x <= Math.min(w - 1, at.x + 24); x++) {
+        const d = Math.hypot(x - at.x, (y - cy) * 1.15)
+        if (d > 24 || d / 24 > 0.35 + (bayer(x, y) / 16) * 0.65) continue
+        const k = y * w + x
+        if (px[k]! - ramp[k]! < LEVELS - 1) px[k] = px[k]! + 1
+      }
+    }
+  }
+
+  private paintAcheron(): void {
+    for (let y = this.bank + 1; y < this.top; y++) {
+      for (let x = 0; x < this.w; x++) {
+        const wave = Math.sin(x * 0.22 + this.t * 1.3 + y * 2.4) + Math.sin(x * 0.09 - this.t * 0.8 + y * 1.3)
+        if (wave > 1.5) this.dot(x, y, RAMP.sea + 5)
+        else if (wave > 0.95) this.dot(x, y, RAMP.sea + 3)
+      }
+    }
+  }
+
+  /** Charon's boat, over the feet of those it carries. */
+  private paintBoat(canvas: Canvas): void {
+    const x = this.boatX()
+    const y = this.top - 4 + Math.round(Math.sin(this.t * 1.7) * 0.8)
+    const isRowing = this.ring < 0 && this.climb > BOARDED && this.climb < CROSSED
+    stamp(canvas, FERRYMAN, x + 19, y - 1, false)
+    const pull = isRowing ? Math.sin(this.t * 3.2) : 0.3
+    for (let k = 0; k < 17; k++) this.dot(x + 14 + k * (0.45 + pull * 0.3), y - 9 + k * 0.85, SPOT.hullLight)
+    for (let a = -24; a <= 27; a++) {
+      const bow = Math.max(0, Math.abs(a - 1.5) - 18)
+      const top = y - Math.round(bow * 0.75)
+      const depth = 5 - Math.round(Math.max(0, Math.abs(a - 1.5) - 15) * 0.32)
+      for (let b = 0; b < depth; b++) this.dot(x + a, top + b, b === 0 ? SPOT.hullLight : (a + 40) % 8 === 0 || b === 2 ? SPOT.hull : RAMP.wood + 4)
+    }
+    if (isRowing) for (let k = 0; k < 9; k++) this.dot(x + 29 + k * 2 + ((this.t * 14) % 2), y + 3 + (k % 2), RAMP.sea + 6)
+  }
+
+  /** The name of each circle, cut in its wall. */
+  private paintNames(canvas: Canvas): void {
+    this.labels.circles.forEach((name, i) => {
+      const ring = this.rings[i]
+      if (ring === undefined) return
+      const text = capitals(name)
+      const roof = i === 0 ? this.top + 4 : this.rings[i - 1]!.y - Math.round(this.rings[i - 1]!.bow * 0.35)
+      const isHere = i === this.ring
+      const x = Math.round(this.cx) - (textWidth(text) >> 1)
+      const y = roof + (i === LAST ? 1 : 5)
+      write(canvas, text, x + 1, y + 1, SPOT.void)
+      write(canvas, text, x, y, i < this.ring ? RAMP.gold + 3 : isHere ? RAMP.gold + 5 : RAMP.stone + 4)
+    })
+  }
+
+  /** D A N T E, one letter for each step, down the left of the pit; what the step found, on the right. */
+  private paintPlaques(goal: Goal, canvas: Canvas): void {
+    const { facts, lit, now } = this.labels
+    const beat = 0.5 + 0.5 * Math.sin(this.t * 4)
+    LETTERS.forEach((letter, n) => {
+      const i = n * 2
+      const ring = this.rings[i]!
+      const x = Math.max(1, Math.round(this.cx - ring.outer - 15))
+      const y = ring.y - 17
+      const isDone = lit[n] === true
+      const isNow = n === now
+      const isBroken = goal.mood === 'failed' && isNow
+      for (let b = 0; b < 13; b++) {
+        for (let a = 0; a < 11; a++) {
+          const isEdge = b === 0 || a === 0 || b === 12 || a === 10
+          const base = isDone || isNow ? RAMP.gold : RAMP.stone
+          this.dot(x + a, y + b, base + (isEdge ? (b === 0 || a === 0 ? 4 : 2) : 1))
+        }
+      }
+      const color = isBroken ? SPOT.eye : isDone ? RAMP.gold + 6 : isNow ? FLAME[0]![4 + Math.round(beat * 3)]! : RAMP.stone + 5
+      writeBig(canvas, letter, x + 3, y + 3, color)
+      const fact = capitals(facts[n] ?? '')
+      if (fact === '') return
+      const at = Math.min(this.w - textWidth(fact) - 2, Math.round(this.cx + ring.outer + 5))
+      write(canvas, fact, at + 1, ring.y + 2, SPOT.void)
+      write(canvas, fact, at, ring.y + 1, isDone ? RAMP.gold + 5 : FLAME[0]![6]!)
     })
   }
 
@@ -578,7 +768,7 @@ export class Pit {
       case 0: {
         // Limbo: the noble castle, its windows lit.
         for (let n = -3; n <= 3; n++) {
-          const tall = n === 0 ? 17 : Math.abs(n) === 1 ? 12 : Math.abs(n) === 2 ? 15 : 9
+          const tall = n === 0 ? 14 : Math.abs(n) === 1 ? 9 : Math.abs(n) === 2 ? 12 : 7
           const base = Math.round(floor((n * 8) / ring.outer))
           for (let x = -4; x <= 4; x++) {
             for (let y = 0; y < tall; y++) {
@@ -587,14 +777,21 @@ export class Pit {
             }
           }
           if (noise(n + 9, Math.floor(t * 0.4), 70) < 0.8) {
-            this.dot(this.cx + n * 8, base - tall + 6, SPOT.window)
-            this.dot(this.cx + n * 8, base - tall + 7, SPOT.window)
+            this.dot(this.cx + n * 8, base - tall + 4, SPOT.window)
+            this.dot(this.cx + n * 8, base - tall + 5, SPOT.window)
           }
         }
         break
       }
       case 1:
-        // Lust: the storm that never rests, and the souls it carries.
+        // Lust: Minos, whose tail gives the sentence; the storm that never rests, and who it carries.
+        for (let k = 0; k < 40; k++) {
+          const a = k * 0.19 + Math.sin(t * 1.4) * 0.3
+          const r = 11 - k * 0.2
+          this.dot(this.cx + ring.outer * 0.5 + Math.cos(a) * r, floor(0.5) - 8 + Math.sin(a) * r * 0.8, SPOT.hideLight)
+          this.dot(this.cx + ring.outer * 0.5 + Math.cos(a) * r + 1, floor(0.5) - 8 + Math.sin(a) * r * 0.8, SPOT.hide)
+        }
+        stamp(canvas, MINOS, Math.round(this.cx + ring.outer * 0.5), Math.round(floor(0.5)) + 2, false)
         for (let n = 0; n < 46; n++) {
           const life = (t * (0.5 + noise(n, 1, 71) * 0.5) + noise(n, 2, 71)) % 1
           const u = life * 2 - 1
@@ -613,7 +810,11 @@ export class Pit {
         break
       case 2: {
         // Gluttony: the cold rain, the mud, and Cerberus.
-        stamp(canvas, CERBERUS, Math.round(this.cx + Math.sin(t * 0.35) * 14), Math.round(floor(0)) + 2, Math.cos(t * 0.35) < 0)
+        stamp(canvas, CERBERUS[Math.sin(t * 2.6) > 0.2 ? 1 : 0]!, Math.round(this.cx + Math.sin(t * 0.35) * 16), Math.round(floor(0)) + 3, Math.cos(t * 0.35) < 0)
+        for (let n = 0; n < 4; n++) {
+          const u = [-0.8, -0.55, 0.6, 0.84][n]!
+          if (Math.sin(t * 0.9 + n * 2) > -0.4) stamp(canvas, HEAD, Math.round(this.cx + u * ring.outer), Math.round(floor(u)) + 2)
+        }
         for (let n = 0; n < 60; n++) {
           const life = (t * (1.6 + noise(n, 1, 72)) + noise(n, 2, 72)) % 1
           const x = this.cx + (noise(n, 3, 72) * 2 - 1) * ring.outer + life * 4
@@ -636,8 +837,8 @@ export class Pit {
               this.dot(x + a, y - 5 + b, RAMP.stone + (d > 4.4 ? 1 : b < -2 ? 6 : roll > 0.5 ? 3 : 5))
             }
           }
-          stamp(canvas, SOUL, x + side * 8, y + 1, side < 0)
-          stamp(canvas, SOUL, x + side * 13, y + 2, side < 0)
+          stamp(canvas, SOUL, x + side * 9, y + 1, side < 0)
+          stamp(canvas, SOUL, x + side * 16, y + 2, side < 0)
         }
         for (let n = 0; n < 14; n++) if (noise(n, Math.floor(t * 4), 73) < 0.3) this.dot(this.cx + (noise(n, 5, 73) * 2 - 1) * ring.outer * 0.8, ring.y - 1 - noise(n, 6, 73) * ring.bow * 0.5, SPOT.coin)
         break
@@ -654,19 +855,34 @@ export class Pit {
             else if (wave > 0.4) this.dot(x, y, RAMP.bog + 3)
           }
         }
-        for (let n = 0; n < 5; n++) {
-          const u = (noise(n, 1, 74) * 2 - 1) * 0.8
-          const y = Math.round(floor(u))
-          const rise = Math.sin(t * 1.3 + n * 2)
-          if (rise > 0) {
-            this.dot(this.cx + u * ring.outer, y, SPOT.soul)
-            this.dot(this.cx + u * ring.outer + 1, y, SPOT.soulDim)
-            if (rise > 0.6) this.dot(this.cx + u * ring.outer, y - 1, SPOT.soul)
-          }
+        {
+          // Phlegyas crosses it without rest.
+          const u = Math.sin(t * 0.3) * 0.5
+          const x = Math.round(this.cx + u * ring.outer)
+          const y = Math.round(floor(u)) + Math.round(Math.sin(t * 2) * 0.7)
+          const isRight = Math.cos(t * 0.3) > 0
+          stamp(canvas, FERRYMAN, x - (isRight ? 6 : -6), y - 1, isRight)
+          for (let k = 0; k < 13; k++) this.dot(x + (isRight ? 1 : -1) * k * (0.5 + Math.sin(t * 2.4) * 0.25), y - 8 + k * 0.85, SPOT.hullLight)
+          for (let a = -14; a <= 14; a++) for (let b = 0; b < 4 - Math.max(0, Math.abs(a) - 11); b++) this.dot(x + a, y - Math.max(0, Math.abs(a) - 11) + b, b === 0 ? SPOT.hullLight : SPOT.hull)
+        }
+        for (let n = 0; n < 6; n++) {
+          const u = (noise(n, 1, 74) * 2 - 1) * 0.85
+          const rise = Math.sin(t * 1.1 + n * 2)
+          if (rise > 0) stamp(canvas, HEAD, Math.round(this.cx + u * ring.outer), Math.round(floor(u)) + 4 - Math.round(rise * 3))
         }
         break
       case 5:
-        // Heresy: open tombs, each with its fire.
+        // Heresy: the walls of the city of Dis, and inside them open tombs, each with its fire.
+        for (let x = Math.ceil(this.cx - ring.outer + 2); x < this.cx + ring.outer - 2; x++) {
+          const roof = this.back(i - 1, (x - this.cx) * (this.rings[i - 1]!.hole / ring.outer)) + this.rings[i - 1]!.bow * 0.75
+          const isMerlon = Math.floor((x + 400) / 3) % 2 === 0
+          for (let b = isMerlon ? 0 : 2; b < 7; b++) this.dot(x, roof + 12 + b, RAMP.fire + (b < 3 ? 3 : 1 + ((x + b) % 5 === 0 ? 1 : 0)))
+          if ((Math.round(x - this.cx) + 400) % 17 === 0) {
+            for (let a = -3; a <= 3; a++) for (let b = 0; b < 13; b++) this.dot(x + a, roof + 7 + b, RAMP.fire + (b === 0 && Math.abs(a) % 2 === 1 ? 0 : a < 0 ? 3 : 2))
+            this.dot(x, roof + 12, SPOT.eye)
+            this.dot(x, roof + 13, SPOT.eye)
+          }
+        }
         for (let n = -3; n <= 3; n++) {
           const u = (n / 3) * 0.78
           const x = Math.round(this.cx + u * ring.outer)
@@ -691,6 +907,16 @@ export class Pit {
             this.dot(x, y, wave > 0.9 ? SPOT.bloodLight : wave > -0.4 ? SPOT.blood : RAMP.blood + 2)
           }
         }
+        {
+          // The centaurs keep the bank, bows drawn.
+          const u = Math.sin(t * 0.42) * 0.55
+          const isRight = Math.cos(t * 0.42) > 0
+          stamp(canvas, CENTAUR[Math.floor(t * 5) % 2]!, Math.round(this.cx + u * ring.outer), Math.round(floor(u)) - 1, isRight)
+        }
+        for (let n = 0; n < 5; n++) {
+          const u = -0.82 + n * 0.41
+          if (Math.sin(t * 1.5 + n * 1.8) > 0) stamp(canvas, HEAD, Math.round(this.cx + u * ring.outer), Math.round(floor(u)) + 3)
+        }
         for (let n = 0; n < 22; n++) {
           const life = (t * (0.28 + noise(n, 1, 76) * 0.2) + noise(n, 2, 76)) % 1
           const x = this.cx + (noise(n, 3, 76) * 2 - 1) * ring.outer * 0.9 + Math.sin(life * 8 + n) * 2
@@ -708,6 +934,11 @@ export class Pit {
             for (let b = 0; b < 3; b++) this.dot(x + a, arch + b, RAMP.stone + (b === 0 ? 4 : 2))
           }
         }
+        {
+          // Geryon glides in the dark above them.
+          const x = Math.round(this.cx + Math.sin(t * 0.5) * ring.outer * 0.42)
+          stamp(canvas, GERYON[Math.sin(t * 3) > 0 ? 0 : 1]!, x, Math.round(ring.y - ring.tall * 0.34 + Math.sin(t * 1.1) * 2), Math.cos(t * 0.5) < 0)
+        }
         for (let n = 0; n < 7; n++) {
           const u = ((n / 6) * 2 - 1) * 0.82 + Math.sin(t * 0.7 + n) * 0.04
           const y = floor(u) - 1
@@ -716,7 +947,8 @@ export class Pit {
         break
       default: {
         // Treachery: Cocytus, the lake of ice, and Lucifer beating his wings in the middle.
-        stamp(canvas, LUCIFER[Math.floor(t * 1.4) % 2]!, Math.round(this.cx + 7), Math.round(ring.y - ring.bow * 0.62))
+        this.paintLucifer(this.cx + 8, ring.y - ring.bow * 0.3)
+        for (const [n, u] of [-0.35, 0.72, 0.9].entries()) if (Math.sin(t * 0.5 + n * 2) > -0.7) stamp(canvas, HEAD, Math.round(this.cx + u * ring.outer), Math.round(floor(u)) + 4)
         for (let n = 0; n < 26; n++) {
           const life = (t * (0.14 + noise(n, 1, 78) * 0.12) + noise(n, 2, 78)) % 1
           const x = this.cx + (noise(n, 3, 78) * 2 - 1) * ring.outer * 0.95 + Math.sin(life * 7 + n) * 3
@@ -725,6 +957,34 @@ export class Pit {
         }
       }
     }
+  }
+
+  /** Lucifer to the waist in the ice: three faces, and the wings whose wind freezes the lake. */
+  private paintLucifer(x: number, foot: number): void {
+    const { t } = this
+    const flap = Math.sin(t * 2.1)
+    for (const side of [-1, 1]) {
+      for (let d = 5; d <= 27; d++) {
+        const u = (d - 5) / 22
+        const top = foot - 13 - Math.sin(u * 2.5 + 0.2) * (9 + flap * 4) + u * u * (5 - flap * 4)
+        const bottom = foot - 5 - u * 2 - Math.abs(Math.sin(u * Math.PI * 3)) * 4 - flap * u * 2
+        for (let y = top; y <= bottom; y++) this.dot(x + side * d, y, y < top + 1.2 || Math.abs(Math.sin(u * Math.PI * 3)) < 0.16 ? SPOT.demonLight : SPOT.demon)
+      }
+    }
+    for (let b = 0; b < 14; b++) {
+      const half = b < 5 ? 6 + b * 0.7 : 9 - (b - 5) * 0.25
+      for (let a = -half; a <= half; a++) this.dot(x + a, foot - 13 + b, Math.abs(a) > half - 1.4 ? SPOT.demonLight : (Math.round(a) + b) % 7 === 0 ? SPOT.demonLight : SPOT.demon)
+    }
+    // Faces: red in the middle, pale and black at the sides.
+    for (const [dx, r, face] of [[-6, 3.6, RAMP.gold + 1], [6, 3.6, RAMP.rock + 2], [0, 5, RAMP.blood + 3]] as const) {
+      for (let b = -r; b <= r; b++) for (let a = -r * 0.85; a <= r * 0.85; a++) if ((a / (r * 0.85)) ** 2 + (b / r) ** 2 <= 1) this.dot(x + dx + a, foot - 18 + b, Math.abs(a) > r * 0.55 ? SPOT.demon : face)
+      this.dot(x + dx - 1.4, foot - 19, SPOT.eye)
+      this.dot(x + dx + 1.4, foot - 19, SPOT.eye)
+      for (let a = -1; a <= 1; a++) this.dot(x + dx + a, foot - 16, SPOT.bone)
+    }
+    for (const side of [-1, 1]) for (let k = 0; k < 6; k++) this.dot(x + side * (2 + k * 0.7), foot - 22 - k + (k > 3 ? 1 : 0), SPOT.boneDark)
+    // Ice over his waist.
+    for (let a = -12; a <= 12; a++) this.dot(x + a, foot + 1, RAMP.ice + (Math.abs(a) % 3 === 0 ? 6 : 5))
   }
 
   private paintFire(): void {

@@ -1,6 +1,6 @@
 # Dante
 
-**Un conserje de cine con IA para Claude Code.** Pide una película o un episodio con tus palabras. Dante busca
+**D**ebrid **A**ggregator & **N**avigator **T**racker **E**ngine: un conserje de cine con IA para Claude Code. Pide una película o un episodio con tus palabras. Dante busca
 en los motores que ya usas, mira qué está disponible al instante en tu debrid, ordena cada versión según tus
 preferencias y te dice por qué, añade lo que elijas y lo reproduce.
 
@@ -14,7 +14,7 @@ Cómo se ve (respuesta ilustrativa, no una transcripción):
 
 ```text
 $ dante
-◉ ◉ ◉ ○ ○  Círculo VI · Herejía · caché · Night of the Living Dead · 6s
+D A N T E  Círculo VI · Herejía · caché · Night of the Living Dead · 6s
 
 ❧ Para La noche de los muertos vivientes (1968) la elección es el remux 4K: 2160p HDR10, vídeo
   sin tocar, audio en castellano e inglés, cacheado en AllDebrid. El remux 1080p ocupa un
@@ -41,7 +41,7 @@ Night of the Living Dead (1968): 143 results after ranking, from torrentio (145)
 - **Añade, resuelve y reproduce:** IINA, VLC o mpv, o una fuente "Dante" dentro de Stremio en cualquier dispositivo (también la tele).
 - **Rellena el idioma que falta.** Si el mejor vídeo no tiene tu idioma y otra versión sí, prepara el doblaje con [audio4films](https://github.com/4TheDoctor/audio4films): sincronizado, sin pérdida y verificado.
 - **Discos Blu-ray completos (BDMV) con menús:** copia los archivos del menú en tu equipo y enlaza el vídeo del montaje de red, así los menús no se leen por la red. En VLC los menús BD-J pueden seguir siendo lentos: es un límite de libbluray.
-- **Su propia interfaz ("Inferno"):** un Dante en pixel art en el encabezado, una regla que arde mientras trabaja y una línea discreta por herramienta. Al lado del chat, los nueve círculos del Infierno: Dante y Virgilio los bajan a medida que el pedido avanza de verdad (título, búsqueda, caché, añadir, reproducir, o los pasos de cualquier otro pedido) y al terminar salen a ver las estrellas. En kitty y Ghostty se dibujan a resolución completa; en los demás terminales, con caracteres de bloque (`graphics = "auto" | "image" | "blocks"` en `dante.toml`). `/inferno` los oculta o los muestra; `animation = "full" | "calm" | "off"` decide cuánto se mueven. Se abre solo en terminales de 144 columnas o más. Solo usa los puntos de extensión oficiales de Claude Code, que no se modifica. En inglés y en español.
+- **Su propia interfaz ("Inferno"):** un Dante en pixel art en el encabezado, una regla que arde mientras trabaja y una línea discreta por herramienta. Al lado del chat, los nueve círculos del Infierno: Dante y Virgilio esperan ante la puerta, cruzan el Aqueronte con Caronte y bajan a medida que el pedido avanza de verdad (título, búsqueda, caché, añadir, reproducir: una letra de DANTE por cada uno, o los pasos de cualquier otro pedido) y al terminar salen a ver las estrellas. Lo que encuentra cada paso (resultados, versiones en caché, descarga) queda grabado en la roca junto a su letra. En kitty y Ghostty se dibujan a resolución completa; en los demás terminales, con caracteres de bloque (`graphics = "auto" | "image" | "blocks"` en `dante.toml`). `/inferno` los oculta o los muestra; `animation = "full" | "calm" | "off"` decide cuánto se mueven. Se abre solo en terminales de 144 columnas o más. Solo usa los puntos de extensión oficiales de Claude Code, que no se modifica. En inglés y en español.
 
 ## Instalación
 

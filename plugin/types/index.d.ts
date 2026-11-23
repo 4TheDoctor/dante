@@ -7,6 +7,23 @@ export type Journey = {
   status: 'running' | 'done' | 'failed'
   startedAt: number
   endedAt: number | null
+  /** The steps that really happened. */
+  did: StepName[]
+  facts: Facts
+}
+
+export type StepName = 'title' | 'search' | 'cache' | 'add' | 'play'
+
+/** What each step found, as its tool reported it. */
+export type Facts = {
+  year?: number
+  results?: number
+  cached?: number
+  checked?: number
+  /** The service where it is cached, added or comes from. */
+  where?: string
+  percent?: number
+  player?: string
 }
 
 export type TransferRow = {

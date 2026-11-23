@@ -5,7 +5,7 @@ import { CIRCLES, type Mood } from './inferno'
 import { STEPS } from './words'
 
 export interface Progress {
-  /** 0 = first circle … 8 = ninth. A fraction is a download's real percentage. */
+  /** -1 = before the gate; 0 = first circle … 8 = ninth. A fraction is a download's real percentage. */
   depth: number
   mood: Mood
   /** The whole thing is finished: out to see the stars. */
@@ -41,7 +41,8 @@ export function progressOf({ journey, tasks, download, isWorking }: ProgressInpu
     const isDone = tasks.done >= tasks.total
     return { depth: (LAST * Math.min(tasks.done, tasks.total)) / tasks.total, mood: isDone ? 'done' : idle, isDone }
   }
-  return { depth: 0, mood: idle, isDone: false }
+  // Nothing to measure: they wait before the gate.
+  return { depth: -1, mood: idle, isDone: false }
 }
 
 export interface Motion {

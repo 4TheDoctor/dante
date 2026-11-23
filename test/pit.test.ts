@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest'
 import { PLTE } from '../src/pit/palette.js'
 import { encodePng } from '../src/pit/png.js'
 import { Pit, type Goal } from '../src/pit/scene.js'
-import { CERBERUS, DANTE, LUCIFER, SOUL, VIRGIL } from '../src/pit/sprites.js'
+import { capitals, CENTAUR, CERBERUS, DANTE, FERRYMAN, GERYON, HEAD, MINOS, SKULL, SOUL, VIRGIL, wrap } from '../src/pit/sprites.js'
 import { drawsPictures } from '../src/launch.js'
 
 const goal = (depth: number, mood: Goal['mood'] = 'running', isDone = false): Goal => ({ depth, mood, isDone })
@@ -42,7 +42,7 @@ describe('the high-resolution pit', () => {
     expect(pit.stars).toBe(0)
     run(pit, goal(8, 'done', true), 60)
     expect(pit.stars).toBe(1)
-    run(pit, goal(0), 3)
+    run(pit, goal(0), 12)
     expect(pit.stars).toBe(0)
     expect(pit.isSettled(goal(0))).toBe(true)
   })
@@ -55,7 +55,35 @@ describe('the high-resolution pit', () => {
   })
 
   it('has sprites with rows of one width', () => {
-    for (const art of [...DANTE, ...VIRGIL, SOUL, CERBERUS, ...LUCIFER]) expect(new Set(art.map(row => row.length)).size).toBe(1)
+    for (const art of [...DANTE, ...VIRGIL, SOUL, HEAD, SKULL, FERRYMAN, MINOS, ...CERBERUS, ...CENTAUR, ...GERYON]) expect(new Set(art.map(row => row.length)).size).toBe(1)
+  })
+})
+
+describe('what is cut in the rock', () => {
+  it('has only letters the alphabet can draw, on lines that fit', () => {
+    expect(capitals('La caída: ¿qué? №1')).toBe('LA CAIDA: QUE? 1')
+    expect(wrap('LA NOCHE DE LOS MUERTOS VIVIENTES', 22, 2)).toEqual(['LA NOCHE DE LOS', 'MUERTOS VIVIENTES'])
+    expect(wrap('ONE TWO THREE FOUR FIVE SIX', 9, 2)).toEqual(['ONE TWO', 'THREE..'])
+    expect(wrap('SUPERCALIFRAGILISTIC', 8, 2)).toEqual(['SUPERCAL'])
+  })
+
+  it('changes with the request, and no label at all is fine too', () => {
+    const pit = new Pit(161, 396)
+    const plain = pit.frame(goal(-1, 'idle'), 0).slice()
+    pit.labels = { circles: ['Limbo'], title: 'Example', facts: ['1968'], lit: [true], now: 1 }
+    expect(pit.frame(goal(-1, 'idle'), 0)).not.toEqual(plain)
+  })
+})
+
+describe('before the gate', () => {
+  it('waits there with nothing asked, and crosses the river to start', () => {
+    const pit = new Pit(161, 396)
+    run(pit, goal(-1, 'idle'), 3)
+    expect(pit.isSettled(goal(-1, 'idle'))).toBe(true)
+    run(pit, goal(0), 2)
+    expect(pit.isSettled(goal(0))).toBe(false)
+    run(pit, goal(0), 10)
+    expect(pit.isSettled(goal(0))).toBe(true)
   })
 })
 

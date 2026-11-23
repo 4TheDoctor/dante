@@ -3,9 +3,9 @@ import type { EngineInterface, Register } from 'claude-code'
 
 import type { Journey, TaskList, TransferRow } from '../types'
 import { draw, drawRule, makeScene, toCells, type Scene } from './inferno'
-import { danteTool, declaredSteps, downloadOf, isDub, outputText, parseTransfers, pitSize, readFrames, STEP_OF, targetOf, taskChange, titleOf } from './parse'
+import { danteTool, declaredSteps, downloadOf, factsFrom, isDub, outputText, parseTransfers, pitSize, readFrames, shortFacts, STEP_OF, targetOf, taskChange, titleOf } from './parse'
 import { advance, isSettled, progressOf, type Motion, type Progress } from './progress'
-import { STEPS, words, type Lang } from './words'
+import { DANTE, STEPS, words, type Lang } from './words'
 
 // Dante's look for Claude Code ("Inferno"): the laurelled profile in the header, the five circles
 // above the prompt, one quiet line per Dante tool, the Divine Comedy on the spinner. Every hook
@@ -29,7 +29,7 @@ const LAUREL = '#8FB65A'
 // The circles of Hell, drawn beside the chat (inferno.ts) and repainted in place on this beat.
 const PANE_ID = 'inferno'
 const PANE_COLUMNS = 46
-const CAPTION_ROWS = 4
+const CAPTION_ROWS = 8
 /** The widest a Raster may be. */
 const RULE_COLUMNS = 512
 const BEAT_MS = 100
@@ -37,7 +37,7 @@ const BEAT_MS = 100
 const REST_AFTER_S = 300
 
 // Literals on purpose: Claude Code scans these references before running the module.
-const journeyAtom = atom({ plugin: 'dante', key: 'journey' } as const, null, { shape: 'journey-1' })
+const journeyAtom = atom({ plugin: 'dante', key: 'journey' } as const, null, { shape: 'journey-2' })
 const transfersAtom = atom({ plugin: 'dante', key: 'transfers' } as const, [], { shape: 'transfers-1' })
 const tickAtom = atom({ plugin: 'dante', key: 'tick' } as const, 0)
 const NO_TASKS: TaskList = { title: '', all: {} }
@@ -85,7 +85,7 @@ const VOICE = {
   scope: 'session',
   text: `# Dante
 
-This session runs inside Dante: Claude Code set up as a media concierge, opened in the user's Dante folder. Use the \`dante\` skill and the \`mcp__*dante__*\` tools for anything about finding, choosing, adding or playing films and series; CLAUDE.md in this folder holds the user's tastes. For any other request of three or more steps, declare them with Dante's \`progress\` tool and mark each one when it is really finished. In chat, speak as Dante: a calm, well-read guide who knows the way through a maze of releases and says plainly which one and why, in the user's language and in few words. No theatrics in tables, warnings or anything with numbers. Never print keys, addon config URLs or Keychain values.`,
+This session runs inside Dante (Debrid Aggregator & Navigator Tracker Engine): Claude Code set up as a media concierge, opened in the user's Dante folder. Use the \`dante\` skill and the \`mcp__*dante__*\` tools for anything about finding, choosing, adding or playing films and series; CLAUDE.md in this folder holds the user's tastes. For any other request of three or more steps, declare them with Dante's \`progress\` tool and mark each one when it is really finished. In chat, speak as Dante: a calm, well-read guide who knows the way through a maze of releases and says plainly which one and why, in the user's language and in few words. No theatrics in tables, warnings or anything with numbers. Never print keys, addon config URLs or Keychain values.`,
 } as const
 
 type Header = { version: string; model: string; cwd: string }
@@ -180,9 +180,26 @@ export const register: Register = on => {
   // The size the pane wants pictures at, and since which beat.
   let wanted: { columns: number; rows: number; since: number } | undefined
 
+  // The five letters and what is cut beside them: the steps of a film, or the share of any other request.
+  const marks = (): { title: string; facts: string[]; lit: boolean[]; now: number } => {
+    if (journeyNow !== null) {
+      const { title, facts, did, reached, status } = journeyNow
+      return { title, facts: shortFacts(facts), lit: STEPS.map(step => did.includes(step)), now: status === 'done' ? -1 : reached }
+    }
+    const { total, done } = tally()
+    const share = total === 0 ? 0 : (done / total) * STEPS.length
+    const at = Math.max(0, Math.ceil(share) - 1)
+    return {
+      title: tasksNow.title,
+      facts: STEPS.map((_, i) => (total > 0 && i === at ? `${done}/${total}` : '')),
+      lit: STEPS.map((_, i) => i + 1 <= share),
+      now: total > 0 && done < total ? Math.floor(share) : -1,
+    }
+  }
+
   const helperState = (): string => {
     const to = target()
-    return JSON.stringify({ depth: to.depth, mood: to.mood, isDone: to.isDone, pace: animation })
+    return JSON.stringify({ depth: to.depth, mood: to.mood, isDone: to.isDone, pace: animation, labels: { circles: words(lang).circles, ...marks() } })
   }
 
   // What the helper needs this beat: to start, to be told something, or to stop.
@@ -395,7 +412,7 @@ export const register: Register = on => {
       const title = titleOf(tool, e)
       journeyNow = await update($, journeyAtom, j => {
         const isFresh = j === null || j.endedAt !== null || tool === 'find_title'
-        const base: Journey = isFresh ? { title: title ?? '', reached, status: 'running', startedAt: now, endedAt: null } : j
+        const base: Journey = isFresh ? { title: title ?? '', reached, status: 'running', startedAt: now, endedAt: null, did: [], facts: {} } : j
         return { ...base, title: title ?? base.title, reached, status: 'running', endedAt: null }
       })
       if (stopTicking === undefined) {
@@ -421,8 +438,17 @@ export const register: Register = on => {
       const now = await $.clock.now()
       const reached = STEPS.indexOf(step)
       const status: Journey['status'] = hasFailed ? 'failed' : 'done'
+      const found = hasFailed ? {} : factsFrom(tool, e, outputText(ran.result ?? ran.text))
       journeyNow = await update($, journeyAtom, j =>
-        j === null || j.reached !== reached ? j : { ...j, status, endedAt: step === 'play' || hasFailed ? now : null },
+        j === null || j.reached !== reached
+          ? j
+          : {
+              ...j,
+              status,
+              endedAt: step === 'play' || hasFailed ? now : null,
+              did: hasFailed || j.did.includes(step) ? j.did : [...j.did, step],
+              facts: { ...j.facts, ...found },
+            },
       )
       if (step === 'play' || hasFailed) {
         stopTicking?.()
@@ -432,6 +458,11 @@ export const register: Register = on => {
 
     if (!hasFailed && ran.deny === undefined) {
       const rows = parseTransfers(tool, outputText(ran.result ?? ran.text))
+      if (rows.length && step === undefined) {
+        // How the download goes: no step of its own, but the request's own number.
+        const found = factsFrom(tool, e, outputText(ran.result ?? ran.text))
+        journeyNow = await update($, journeyAtom, j => (j === null ? j : { ...j, facts: { ...j.facts, ...found } }))
+      }
       if (rows.length) {
         transfersNow = await update($, transfersAtom, list => {
           const kept = list.filter(r => !rows.some(n => n.service === r.service && n.id === r.id))
@@ -472,10 +503,20 @@ export const register: Register = on => {
             </Text>
             <Text dimColor> v{VERSION}</Text>
           </Text>
-          <Text dimColor>{header.model}</Text>
-          <Text dimColor>
-            Claude Code {header.version} · {header.cwd}
+          <Text>
+            {DANTE.map(word => (
+              <Text key={word}>
+                <Text bold color={GOLD}>
+                  {word.slice(0, 1)}
+                </Text>
+                <Text dimColor>{word.slice(1)} </Text>
+              </Text>
+            ))}
           </Text>
+          <Text dimColor>
+            {header.model} · Claude Code {header.version}
+          </Text>
+          <Text dimColor>{header.cwd}</Text>
         </Box>
       </Box>
     )
@@ -526,31 +567,44 @@ export const register: Register = on => {
 
     const { total, done } = tally()
     const isIdle = journey === null && total === 0
-    const heading = to.isDone ? w.stars : w.circle(Math.floor(to.depth))
-    const detail =
-      journey !== null
-        ? [w.steps[STEPS[journey.reached] ?? 'title'], journey.title].filter(Boolean).join(' · ')
-        : total > 0
-          ? [w.tasks(done, total), tasksNow.title].filter(Boolean).join(' · ')
-          : ''
+    const heading = to.isDone ? w.stars : isIdle ? (isWorking ? w.gate : w.verseStart) : w.circle(Math.max(0, Math.floor(to.depth)))
     const foot = to.isDone
       ? w.verseEnd
       : journey !== null
         ? formatDuration((journey.endedAt ?? now) - journey.startedAt)
-        : ''
+        : total > 0
+          ? [w.tasks(done, total), tasksNow.title].filter(Boolean).join(' · ')
+          : ''
+    const { lit, now: at } = marks()
+    const found = journey === null ? [] : w.found(journey.facts, journey.title)
+    const room = Math.max(8, columns - 14)
     return (
       <Box flexDirection="column">
         {picture === undefined ? null : <Image key="pit" source={picture} columns={columns} rows={rows} alt="Inferno" />}
         {cells === undefined ? null : <Raster key="pit" columns={columns} rows={rows} cells={cells} />}
         <Box marginTop={1} flexDirection="column">
-          {isIdle ? (
-            <Text color={GOLD}>{truncate(w.verseStart, columns)}</Text>
-          ) : (
-            <Text bold color={journey?.status === 'failed' ? EMBER : GOLD}>
-              {truncate(heading, columns)}
-            </Text>
-          )}
-          <Text>{truncate(detail, columns)}</Text>
+          <Text bold={!isIdle} color={journey?.status === 'failed' ? EMBER : GOLD}>
+            {truncate(heading, columns)}
+          </Text>
+          {STEPS.map((step, i) => {
+            const isLit = lit[i] === true
+            const isNow = at === i
+            return (
+              <Box key={step} flexDirection="row">
+                <Text bold={isLit || isNow} color={isLit ? GOLD : isNow ? EMBER : undefined} dimColor={!isLit && !isNow}>
+                  {'DANTE'.charAt(i)}{'  '}
+                </Text>
+                {journey === null ? (
+                  <Text dimColor={!isLit}>{DANTE[i]}</Text>
+                ) : (
+                  <Text dimColor={!isLit && !isNow}>
+                    {w.steps[step].padEnd(11)}
+                    {truncate(found[i] ?? '', room)}
+                  </Text>
+                )}
+              </Box>
+            )
+          })}
           <Text dimColor>{truncate(foot, columns)}</Text>
         </Box>
       </Box>
@@ -688,25 +742,26 @@ export const register: Register = on => {
     const { Box, Text } = $.ui.resolve(e)
     const w = words(lang)
     const { reached, status } = journey
-    const marks = STEPS.map((step, i) => {
-      if (i < reached) return { glyph: '◉', color: GOLD, dim: false }
-      if (i > reached) return { glyph: '○', color: undefined, dim: true }
-      if (status === 'failed') return { glyph: '✗', color: EMBER, dim: false }
-      return status === 'done' ? { glyph: '◉', color: GOLD, dim: false } : { glyph: '◎', color: EMBER, dim: false }
+    const { lit, now: at } = marks()
+    const letters = STEPS.map((_, i) => {
+      const letter = 'DANTE'.charAt(i)
+      if (lit[i] === true) return { letter, color: GOLD, dim: false }
+      if (at === i) return { letter, color: EMBER, dim: false }
+      return { letter, color: undefined, dim: true }
     })
     const elapsed = formatDuration((journey.endedAt ?? now) - journey.startedAt)
     const width = Math.max(20, e.props.bodyColumns - 20)
     return (
       <Box flexDirection="column">
         <Box flexDirection="row">
-          {marks.map((m, i) => (
-            <Text key={`c${i}`} color={m.color} dimColor={m.dim}>
-              {m.glyph}{' '}
+          {letters.map((m, i) => (
+            <Text key={`c${i}`} bold={!m.dim} color={m.color} dimColor={m.dim}>
+              {m.letter}{' '}
             </Text>
           ))}
           <Text color={status === 'failed' ? EMBER : GOLD}>
             {' '}
-            {target().isDone ? w.stars : w.circle(Math.floor(target().depth))}
+            {target().isDone ? w.stars : w.circle(Math.max(0, Math.floor(target().depth)))}
           </Text>
           <Text dimColor> · {w.steps[STEPS[reached] ?? 'title'].toLowerCase()}</Text>
           {journey.title === '' ? null : <Text dimColor> · {truncate(journey.title, width)}</Text>}
