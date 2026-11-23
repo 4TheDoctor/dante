@@ -14,7 +14,8 @@ export interface PreparedDisc {
 /**
  * Make a full Blu-ray disc on a network mount (debrid WebDAV, NAS, rclone) play with its menus:
  * copy the menu and navigation folders locally and leave only the big STREAM folder on the
- * mount, through a symlink. Menus then answer instantly while the video streams.
+ * mount, through a symlink. The menu files are then read from the local disk. BD-J menus can still
+ * be slow in VLC: that is a libbluray limit, not the network.
  */
 export function prepareBdmv(source: string, library: string, name = basename(source)): PreparedDisc {
   const bdmv = join(source, 'BDMV')

@@ -40,7 +40,7 @@ Night of the Living Dead (1968): 143 results after ranking, from torrentio (145)
 - **Mira la caché** en AllDebrid, Real-Debrid y TorBox, y limpia lo que tuvo que añadir para mirar.
 - **Añade, resuelve y reproduce:** IINA, VLC o mpv, o una fuente "Dante" dentro de Stremio en cualquier dispositivo (también la tele).
 - **Rellena el idioma que falta.** Si el mejor vídeo no tiene tu idioma y otra versión sí, prepara el doblaje con [audio4films](https://github.com/4TheDoctor/audio4films): sincronizado, sin pérdida y verificado.
-- **Discos Blu-ray completos (BDMV) con menús:** copia los menús en tu equipo y reproduce el vídeo desde el montaje de red, así los menús BD-J no van a tirones.
+- **Discos Blu-ray completos (BDMV) con menús:** copia los archivos del menú en tu equipo y enlaza el vídeo del montaje de red, así los menús no se leen por la red. En VLC los menús BD-J pueden seguir siendo lentos: es un límite de libbluray.
 - **Su propia interfaz ("Inferno"):** el Dante con laurel en el encabezado, cinco círculos sobre el cursor que siguen cada pedido (título, búsqueda, caché, añadir, reproducir) y una línea discreta por herramienta. Solo usa los puntos de extensión oficiales de Claude Code, que no se modifica. En inglés y en español.
 
 ## Instalación

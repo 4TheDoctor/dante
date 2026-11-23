@@ -39,7 +39,7 @@ Night of the Living Dead (1968): 143 results after ranking, from torrentio (145)
 - **Checks the cache** on AllDebrid, Real-Debrid and TorBox, and cleans up whatever it had to add to check.
 - **Adds, resolves and plays:** IINA, VLC or mpv, or a "Dante" source inside Stremio on any device (the TV too).
 - **Fills language gaps.** When the best video lacks your language and another release has it, it plans the dub for [audio4films](https://github.com/4TheDoctor/audio4films): synced, lossless, verified.
-- **Full Blu-ray discs (BDMV) with menus:** copies the menus locally and streams the video from the network mount, so BD-J menus do not lag.
+- **Full Blu-ray discs (BDMV) with menus:** copies the menu files locally and links the video on the network mount, so the menus are not read over the network. BD-J menus can still be slow in VLC, which is a libbluray limit.
 - **Its own look ("Inferno"):** the laurelled Dante in the header, five circles above the prompt that follow each request (title, search, cache, add, play), and one quiet line per tool. Official Claude Code hooks only; Claude Code itself is not modified. English and Spanish.
 
 ## Install
