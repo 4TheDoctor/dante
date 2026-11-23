@@ -1,0 +1,87 @@
+<!doctype html>
+<!-- The picture of the terminal in the README: the reply is made up, the drawings are Dante's own.
+     Run scripts/draw-readme.mjs first, then open this with #en or #es in a browser and
+     capture it at 1240 x 700, two pixels for each one. -->
+<meta charset="utf-8">
+<style>
+  * { box-sizing: border-box; margin: 0 }
+  body { width: 1240px; height: 700px; background: transparent; font: 13.2px/1.5 ui-monospace, Menlo, monospace; color: #f3e7d3 }
+  img { image-rendering: pixelated; display: block }
+  .window { position: absolute; inset: 12px; background: #17100d; border: 1px solid #4a3229; border-radius: 12px; overflow: hidden; display: flex; flex-direction: column }
+  .bar { height: 34px; display: flex; align-items: center; gap: 8px; padding: 0 14px; color: #a8907a; font-size: 13px }
+  .bar i { width: 12px; height: 12px; border-radius: 50% }
+  .bar b { font-weight: 500; margin-left: 10px }
+  .head { display: flex; gap: 26px; padding: 2px 18px 4px; align-items: center }
+  .head p { white-space: pre }
+  .red { color: #d9452b } .gold { color: #f2cb7a } .dim { color: #a8907a } .green { color: #8fb65a } .ember { color: #f07a4d }
+  .meter { margin-left: auto; text-align: left; font-size: 13.5px }
+  .meter u { display: block; height: 3px; width: 190px; margin: 5px 0 4px; text-decoration: none; background: linear-gradient(90deg, #d9452b, #efc766 46%, #8fb65a 70%, #4a3229 70%) }
+  .meter.two u { background: linear-gradient(90deg, #d9452b, #efc766 50%, #8fb65a 88%, #4a3229 88%) }
+  .rule { height: 22px; background: url(../.github/assets/rule.png) 0 0 / 820px 23px repeat-x; image-rendering: pixelated }
+  .main { flex: 1; display: flex; min-height: 0 }
+  .chat { flex: 1; padding: 12px 20px 0 18px; display: flex; flex-direction: column; gap: 13px }
+  .row { display: flex; gap: 10px }
+  .row > span:first-child { color: #d4a24c }
+  .you { background: #241813; margin: 0 -6px; padding: 5px 6px }
+  table { border-collapse: collapse; font-size: 13.5px; width: 100% }
+  th { text-align: left; color: #a8907a; font-weight: 400; border-bottom: 1px solid #4a3229; padding: 3px 10px 4px 0 }
+  td { padding: 4px 10px 3px 0; white-space: nowrap }
+  tr.pick td:not(.green) { color: #fff0b4 }
+  .why { border-left: 3px solid #d9452b; padding: 3px 0 3px 12px }
+  .tools { color: #a8907a; display: grid; grid-template-columns: 74px 1fr; gap: 1px 10px }
+  .tools b { color: #d4a24c; font-weight: 400 }
+  .ask { border-top: 1px solid #4a3229; border-bottom: 1px solid #4a3229; margin: auto 0 10px; padding: 7px 0 }
+  .ask em { display: inline-block; width: 8px; height: 17px; background: #f3e7d3; vertical-align: -3px }
+  .pane { border-left: 1px solid #4a3229; padding: 12px 12px 0 12px; width: 474px; background: #120b09 }
+  .pane img { width: 450px }
+  .pane p { color: #d4a24c; padding-top: 9px; font-size: 14px }
+</style>
+<body>
+<script>
+const T = {
+  en: {
+    tag: ['Debrid ', 'Aggregator & ', 'Navigator ', 'Tracker ', 'Engine'], mem: ['CHAT MEMORY', '70% left'], lim: ['5-HOUR LIMIT', '88% left'],
+    ask: 'Put on Night of the Living Dead. Best picture there is, and I want it in Spanish.',
+    tools: [['Title', 'Night of the Living Dead, 1968'], ['Search', '143 results after ranking'], ['Cache', '2 of 3 cached on AllDebrid']],
+    head: ['#', 'Release', 'Video', 'Audio', 'Size', 'Cache'],
+    rows: [['1', '4K remux', '2160p HDR10', 'Spanish, English', '55.7 GB', 'instant'], ['2', '4K encode', '2160p HDR10', 'English', '18.2 GB', 'instant'], ['3', '1080p remux', '1080p', 'Spanish, English', '19.6 GB', 'not yet']],
+    why: ['<b class="gold">The pick is 1.</b> It is the only 4K with Spanish audio stated in its name, and it is cached.', '+40 2160p · +15 HDR10 · +30 Spanish audio · +10 remux = <b class="gold">95</b>'],
+    end: 'Shall I play it on the TV, or here?', reply: 'On the TV', pane: 'Circle VI · Firewall', file: 'descent.en.png',
+  },
+  es: {
+    tag: ['Debrid ', 'Aggregator & ', 'Navigator ', 'Tracker ', 'Engine'], mem: ['MEMORIA DEL CHAT', '70 % libre'], lim: ['LÍMITE DE 5 HORAS', '88 % libre'],
+    ask: 'Pon La noche de los muertos vivientes. Con la mejor imagen que haya, y en castellano.',
+    tools: [['Título', 'Night of the Living Dead, 1968'], ['Busco', '143 resultados ordenados'], ['Caché', '2 de 3 en caché, AllDebrid']],
+    head: ['#', 'Versión', 'Vídeo', 'Audio', 'Tamaño', 'Caché'],
+    rows: [['1', 'Remux 4K', '2160p HDR10', 'castellano, inglés', '55,7 GB', 'al instante'], ['2', 'Encode 4K', '2160p HDR10', 'inglés', '18,2 GB', 'al instante'], ['3', 'Remux 1080p', '1080p', 'castellano, inglés', '19,6 GB', 'todavía no']],
+    why: ['<b class="gold">La elegida es la 1.</b> Es la única 4K que declara audio en castellano, y está en caché.', '+40 2160p · +15 HDR10 · +30 castellano · +10 remux = <b class="gold">95</b>'],
+    end: '¿La pongo en la tele, o aquí?', reply: 'En la tele', pane: 'Círculo VI · Cortafuegos', file: 'descent.es.png',
+  },
+}
+const t = T[location.hash.slice(1)] ?? T.en
+const cell = (v, n) => `<td class="${n === 5 ? (/(instant|instante)/.test(v) ? 'green' : 'dim') : ''}">${v}</td>`
+document.body.innerHTML = `
+<div class="window">
+  <div class="bar"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i><b>dante</b></div>
+  <div class="head"><img src="../plugin/art/dante/title/00.png" width="77" height="64">
+    <p><span class="red">DANTE</span> <span class="dim">v0.1.1</span>
+${t.tag.map(w => `<b class="gold">${w[0]}</b>${w.slice(1)}`).join('')}
+<span class="dim">~/</span>Dante</p>
+    <div class="meter"><span class="dim">${t.mem[0]}</span><br>${t.mem[1]}<u></u></div>
+    <div class="meter two" style="margin-left:10px"><span class="dim">${t.lim[0]}</span><br>${t.lim[1]}<u></u></div>
+  </div>
+  <div class="rule"></div>
+  <div class="main">
+    <div class="chat">
+      <div class="row you"><span>❯</span><span>${t.ask}</span></div>
+      <div class="tools">${t.tools.map(([a, b]) => `<b>${a}</b><span>${b}</span>`).join('')}</div>
+      <table><tr>${t.head.map(h => `<th>${h}</th>`).join('')}</tr>${t.rows.map((r, n) => `<tr class="${n === 0 ? 'pick' : ''}">${r.map(cell).join('')}</tr>`).join('')}</table>
+      <div class="row"><span>❧</span><span>${t.why[0]}</span></div>
+      <div class="why">${t.why[1]}</div>
+      <div class="row"><span>❧</span><span>${t.end}</span></div>
+      <div class="ask"><span style="color:#d4a24c">❯</span> ${t.reply} <em></em></div>
+    </div>
+    <div class="pane"><img src="../.github/assets/${t.file}"><p>${t.pane}</p></div>
+  </div>
+</div>`
+</script>
