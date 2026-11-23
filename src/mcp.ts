@@ -146,9 +146,7 @@ export function buildServer(dante = new Dante(loadConfig())): McpServer {
         const final = await resolveFinalUrl(link.url)
         const chosen = player ?? dante.config.play.player
         if (chosen === 'stremio') {
-          const search = dante.lastSearch()
-          const media = search?.media
-          if (!media) throw new Error('search first, so Dante knows which title this is')
+          const media = dante.mediaOf(id)
           const stremioId = media.type === 'series' && media.season !== undefined && media.episode !== undefined
             ? `${media.imdbId}:${media.season}:${media.episode}`
             : media.imdbId

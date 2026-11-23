@@ -116,6 +116,18 @@ alldebrid = "env:Y"
     expect(calls.some(c => c.url.includes('magnet/upload'))).toBe(true)
   })
 
+  it('remembers which episode each result is of, whatever was searched for afterwards', async () => {
+    const titles = ['Example.Show.S01E01.1080p.WEB-DL.Castellano.mkv']
+    const { dante } = make(titles, [])
+    const show = { type: 'series' as const, imdbId: 'tt4', title: 'Example Show', season: 1 }
+    const first = (await dante.search({ ...show, episode: 1 })).ranked[0]!.candidate
+    titles[0] = 'Example.Show.S01E02.1080p.WEB-DL.Castellano.mkv'
+    const second = (await dante.search({ ...show, episode: 2 })).ranked[0]!.candidate
+    expect(dante.mediaOf(first.id)).toMatchObject({ imdbId: 'tt4', season: 1, episode: 1 })
+    expect(dante.mediaOf(second.id)).toMatchObject({ imdbId: 'tt4', season: 1, episode: 2 })
+    expect(() => dante.mediaOf('nothing')).toThrow(/search first/)
+  })
+
   it('never takes one film for another, and adds nothing to get a link', async () => {
     const titles = ['First.Film.2024.1080p.WEB-DL.Castellano.mkv']
     const { dante, calls } = make(titles, [

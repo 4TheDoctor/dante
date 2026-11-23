@@ -44,6 +44,7 @@ export interface Deps {
 export class Dante {
   readonly prefs: Preferences
   private readonly candidates = new Map<string, Ranked>()
+  private readonly medias = new Map<string, MediaRef>()
   private readonly searches: SearchResult[] = []
   private enginesCache?: Engine[]
   private debridCache?: DebridClient[]
@@ -122,7 +123,10 @@ export class Dante {
     const nth = this.searches.length + 1
     if (nth > 1) for (const c of wanted) c.id = `${c.id}/${nth}`
     const ranked = rank(wanted, effective)
-    for (const r of ranked) this.candidates.set(r.candidate.id, r)
+    for (const r of ranked) {
+      this.candidates.set(r.candidate.id, r)
+      this.medias.set(r.candidate.id, media)
+    }
     const result: SearchResult = { media, ranked, errors, answered, dub: planDub(ranked, effective) }
     this.searches.push(result)
     return result
@@ -136,6 +140,12 @@ export class Dante {
 
   lastSearch(): SearchResult | undefined {
     return this.searches.at(-1)
+  }
+
+  /** The film or episode a result was found for. */
+  mediaOf(id: string): MediaRef {
+    this.candidate(id)
+    return this.medias.get(id)!
   }
 
   /** Fill in cache status for these results on every configured service (or one). */
