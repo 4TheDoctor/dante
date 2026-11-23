@@ -168,6 +168,9 @@ export class Pit {
   private picture: Picture | undefined
   private logo: Logo | undefined
   private logoFor: boolean | undefined
+  /** The sign over the gate: what its lamps light, and its board with each of them well or failing. */
+  private halo: Array<{ k: number; by: number }> | undefined
+  private readonly boards: Uint8Array[] = []
   // Where Virgil is; Dante walks where he has been.
   private ring = -1
   private along = 0.4
@@ -765,7 +768,7 @@ export class Pit {
     const { w, h, px, ramp } = this
     const canvas: Canvas = { w, h, px }
     const cx = Math.round(this.cx)
-    const { ground, arch, sign, half, foot } = this.gate()
+    const { arch, sign, half, foot } = this.gate()
     if (this.alarm > 0.35) {
       // The lamps are out, and a wider board says so, and why.
       const wide = Math.min(57, (w >> 1) - 3)
@@ -778,56 +781,89 @@ export class Pit {
       return
     }
     // Two lamps over the board; now and then one of them fails for a moment.
-    const lamps = [-1, 1].map((side, n) => ({ x: cx + side * Math.round(half * 0.5), dim: noise(n, Math.floor(this.t * 9), 101) < 0.05 ? 0.3 : 0 }))
-    const shadeAt = (x: number, y: number): number => Math.min(...lamps.map(lamp => Math.hypot((x - lamp.x) / (half * 0.72), (y - sign - 2) / 24) + lamp.dim)) + (bayer(x, y) / 16 - 0.5) * 0.14
+    const isDim = [0, 1].map(n => noise(n, Math.floor(this.t * 9), 101) < 0.05)
     // Their light on the wood, the stones and the ground.
-    for (let y = Math.max(0, sign - 8); y <= ground + 1; y++) {
-      for (let x = Math.max(0, cx - half - 26); x <= Math.min(w - 1, cx + half + 26); x++) {
-        const d = Math.hypot(Math.max(0, Math.abs(x - cx) - half), Math.max(0, sign - y, (y - foot) * 0.75))
-        if (d <= 0) continue
-        const k = y * w + x
-        const step = px[k]! - ramp[k]!
-        const glow = 1.35 - d / 19 - (bayer(x, y) + 0.5) / 16
-        if (glow > 0 && step >= 0 && step < LEVELS - 1) px[k] = px[k]! + (glow > 0.8 && step < LEVELS - 2 && step > 0 ? 2 : 1)
-      }
+    this.halo ??= this.haloOf()
+    for (const { k, by } of this.halo) {
+      const step = px[k]! - ramp[k]!
+      if (step >= 0 && step < LEVELS - 1) px[k] = px[k]! + (by === 2 && step < LEVELS - 2 && step > 0 ? 2 : 1)
     }
-    for (let y = sign; y < foot; y++) {
-      for (let x = cx - half; x <= cx + half; x++) {
-        const isFrame = Math.abs(x - cx) === half || y === sign || y === foot - 1
-        const v = shadeAt(x, y)
-        this.dot(x, y, isFrame ? (y === sign && v < 0.6 ? RAMP.earth + 5 : RAMP.earth + 2) : v < 0.3 ? SPOT.coif : v < 0.58 ? SPOT.bone : v < 0.86 ? SPOT.togaShade : RAMP.earth + 6)
-      }
-    }
-    for (const { x, dim } of lamps) {
+    const key = (isDim[0]! ? 1 : 0) + (isDim[1]! ? 2 : 0)
+    const board = this.boards[key] ?? (this.boards[key] = this.boardOf(isDim))
+    const wide = half * 2 + 1
+    for (let y = sign; y < foot; y++) for (let x = 0; x < wide; x++) this.dot(cx - half + x, y, board[(y - sign) * wide + x]!)
+    isDim.forEach((dim, n) => {
+      const x = cx + (n === 0 ? -1 : 1) * Math.round(half * 0.5)
       for (let k = 0; k < 4; k++) this.dot(x, sign - 1 - k, SPOT.metalDark)
       for (let k = -3; k <= 3; k++) this.dot(x + k, sign - 4, SPOT.metalDark)
       for (let k = -2; k <= 2; k++) this.dot(x + k, sign - 5, SPOT.metal)
-      for (let k = -2; k <= 2; k++) this.dot(x + k, sign - 3, dim > 0 ? SPOT.amberDark : SPOT.window)
+      for (let k = -2; k <= 2; k++) this.dot(x + k, sign - 3, dim ? SPOT.amberDark : SPOT.window)
+    })
+    if (half * 2 - 5 < SMALL_SIZE.w) return
+    // Now and then a light runs over the letters.
+    const shine = ((this.t * 1.1) % 11) * 22 - 20
+    if (shine > SIGN.w + SIGN.h + 4) return
+    for (let y = 0; y < SIGN.h; y++) {
+      for (let x = Math.max(0, Math.floor(shine - SIGN.h - 3)); x < Math.min(SIGN.w, shine + 4); x++) {
+        if (SIGN.px[y * SIGN.w + x]! > 0 && Math.abs(x + (SIGN.h - y) * 0.8 - shine) < 2.5) this.dot(cx - (SIGN.w >> 1) + x, sign + 2 + y, SPOT.star)
+      }
+    }
+  }
+
+  /** Where the lamps of the sign reach, and by how much they lighten it. */
+  private haloOf(): Array<{ k: number; by: number }> {
+    const { ground, sign, half, foot } = this.gate()
+    const cx = Math.round(this.cx)
+    const halo: Array<{ k: number; by: number }> = []
+    for (let y = Math.max(0, sign - 8); y <= ground + 1; y++) {
+      for (let x = Math.max(0, cx - half - 26); x <= Math.min(this.w - 1, cx + half + 26); x++) {
+        const d = Math.hypot(Math.max(0, Math.abs(x - cx) - half), Math.max(0, sign - y, (y - foot) * 0.75))
+        const glow = 1.35 - d / 19 - (bayer(x, y) + 0.5) / 16
+        if (d > 0 && glow > 0) halo.push({ k: y * this.w + x, by: glow > 0.8 ? 2 : 1 })
+      }
+    }
+    return halo
+  }
+
+  /** The board with the name, under its two lamps. */
+  private boardOf(isDim: readonly boolean[]): Uint8Array {
+    const { sign, half, foot } = this.gate()
+    const cx = Math.round(this.cx)
+    const wide = half * 2 + 1
+    const tall = foot - sign
+    const px = new Uint8Array(wide * tall)
+    const set = (x: number, y: number, color: number): void => {
+      if (x >= 0 && y >= 0 && x < wide && y < tall) px[y * wide + x] = color
+    }
+    const shadeAt = (x: number, y: number): number =>
+      Math.min(...isDim.map((dim, n) => Math.hypot((x - half - (n === 0 ? -1 : 1) * Math.round(half * 0.5)) / (half * 0.72), (y - 2) / 24) + (dim ? 0.3 : 0))) + (bayer(cx - half + x, sign + y) / 16 - 0.5) * 0.14
+    for (let y = 0; y < tall; y++) {
+      for (let x = 0; x < wide; x++) {
+        const isFrame = x === 0 || x === wide - 1 || y === 0 || y === tall - 1
+        const v = shadeAt(x, y)
+        set(x, y, isFrame ? (y === 0 && v < 0.6 ? RAMP.earth + 5 : RAMP.earth + 2) : v < 0.3 ? SPOT.coif : v < 0.58 ? SPOT.bone : v < 0.86 ? SPOT.togaShade : RAMP.earth + 6)
+      }
     }
     if (half * 2 - 5 < SMALL_SIZE.w) {
       // Too narrow for it: the five letters alone.
       const times = half * 2 > 64 ? 2 : 1
       const tiny: Canvas = { w: 29, h: 7, px: new Uint8Array(29 * 7) }
       LETTERS.forEach((letter, k) => writeBig(tiny, letter, k * 6, 0, SPOT.robeDark))
-      for (let y = 0; y < 7 * times; y++) for (let x = 0; x < 29 * times; x++) if (tiny.px[Math.floor(y / times) * 29 + Math.floor(x / times)] !== 0) this.dot(cx - ((29 * times) >> 1) + x, sign + 11 - ((7 * times) >> 1) + y, SPOT.robeDark)
-      return
+      for (let y = 0; y < 7 * times; y++) for (let x = 0; x < 29 * times; x++) if (tiny.px[Math.floor(y / times) * 29 + Math.floor(x / times)] !== 0) set(half - ((29 * times) >> 1) + x, 11 - ((7 * times) >> 1) + y, SPOT.robeDark)
+      return px
     }
-    const left = cx - (SIGN.w >> 1)
-    const top = sign + 2
+    const left = half - (SIGN.w >> 1)
     const inked = (x: number, y: number): boolean => x >= 0 && y >= 0 && x < SIGN.w && y < SIGN.h && SIGN.px[y * SIGN.w + x]! > 0
-    // Now and then a light runs over it.
-    const shine = ((this.t * 1.1) % 11) * 22 - 20
     for (let y = 0; y <= SIGN.h; y++) {
       for (let x = 0; x <= SIGN.w; x++) {
-        const v = shadeAt(left + x, top + y)
-        if (!inked(x, y)) {
-          if (inked(x - 1, y - 1)) this.dot(left + x, top + y, v < 0.7 ? RAMP.stone + 6 : RAMP.earth + 4)
-          continue
-        }
-        const tone = SIGN.px[y * SIGN.w + x]!
-        this.dot(left + x, top + y, Math.abs(x + (SIGN.h - y) * 0.8 - shine) < 2.5 ? SPOT.star : SIGN_INK[tone < 6 && v > 0.8 ? tone + 1 : tone]!)
+        const v = shadeAt(left + x, 2 + y)
+        if (inked(x, y)) {
+          const tone = SIGN.px[y * SIGN.w + x]!
+          set(left + x, 2 + y, SIGN_INK[tone < 6 && v > 0.8 ? tone + 1 : tone]!)
+        } else if (inked(x - 1, y - 1)) set(left + x, 2 + y, v < 0.7 ? RAMP.stone + 6 : RAMP.earth + 4)
       }
     }
+    return px
   }
 
   /** The little light the two carry. */
