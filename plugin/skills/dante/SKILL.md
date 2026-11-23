@@ -2,7 +2,7 @@
 name: dante
 description: "Trigger: find, choose or play a film, episode, documentary or anime; 4K, HDR or audio-language wishes; debrid cache (AllDebrid, Real-Debrid, TorBox); Stremio; /dante. Searches the user's engines, ranks by their preferences, plays."
 license: MIT
-compatibility: "Needs the dante CLI and its MCP server (npm i -g github:4TheDoctor/dante). audio4films is optional, for dubs."
+compatibility: "Needs the dante CLI and its MCP server (npm i -g https://github.com/4TheDoctor/dante/releases/latest/download/dante.tgz). audio4films is optional, for dubs."
 metadata:
   author: 4TheDoctor
   version: 0.1.0

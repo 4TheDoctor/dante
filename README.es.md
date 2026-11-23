@@ -48,7 +48,7 @@ Night of the Living Dead (1968): 143 results after ranking, from torrentio (145)
 Necesita [Claude Code](https://claude.com/claude-code) y Node 22 o superior.
 
 ```bash
-npm install -g github:4TheDoctor/dante
+npm install -g https://github.com/4TheDoctor/dante/releases/latest/download/dante.tgz
 ```
 
 Después ejecuta `dante`. La primera vez te pide los motores y las claves de debrid (se guardan en el Llavero de
