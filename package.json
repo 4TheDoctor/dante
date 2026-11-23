@@ -1,6 +1,6 @@
 {
   "name": "@4thedoctor/dante",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "An AI media concierge for Claude Code: finds films and series across your engines, checks your debrid cache, picks by your preferences and plays them.",
   "license": "MIT",
   "author": "The Doc (4TheDoctor)",

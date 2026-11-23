@@ -17,7 +17,7 @@ import { DANTE, STEPS, words, type Lang, type StepId } from './words'
 // hands back to the engine when something is not as expected, so the worst case is the stock look.
 
 const PLUGIN = 'dante'
-const VERSION = '0.1.0'
+const VERSION = '0.1.1'
 const HEADER_ID = 'header'
 
 // Stock Claude Code has no fixed slot at the top of the terminal, so the header is placed as a

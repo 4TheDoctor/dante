@@ -21,7 +21,7 @@ export interface Pick {
 
 export const MANIFEST = {
   id: 'community.dante',
-  version: '0.1.0',
+  version: '0.1.1',
   name: 'Dante',
   description: 'What Dante picked for you, from your own debrid account.',
   resources: ['stream'],
