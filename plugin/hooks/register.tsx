@@ -1,12 +1,15 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Journey, TaskList, TransferRow } from '../types'
+import type { Films, Journey, TaskList, TransferRow } from '../types'
+import { PORTRAIT } from './acts'
+import { afterCall, idsIn, NO_FILMS, withFilm } from './film'
 import { draw, drawRule, makeScene, toCells, type Scene } from './inferno'
 import { danteTool, declaredSteps, downloadOf, enginesThatFailed, factsFrom, faultAt, FRAME_KINDS, isBroken, isDub, isRefusal, outputText, parseTransfers, pitSize, readFrames, reasonOf, RULE_MOST, ruleParts, ruleSize, shortFacts, STEP_OF, targetOf, taskChange, titleOf } from './parse'
+import { doingOf, isStanding, next as nextPicture, pictureOf, STILL, type Portrait } from './portrait'
 import { advance, factsAt, isSettled, progressOf, REHEARSAL, stopOf, type Motion, type Progress, type Scene as Stop } from './progress'
 import { gaugeOf, INK, modelPieces, parseStatus, pathPieces, tilesOf, tilesThatFit, type Piece, type Status } from './status'
-import { DANTE, STEPS, words, type Lang } from './words'
+import { DANTE, STEPS, words, type Lang, type StepId } from './words'
 
 // Dante's look for Claude Code ("Inferno"): the laurelled profile in the header, the five circles
 // above the prompt, one quiet line per Dante tool, the Divine Comedy on the spinner. Every hook
@@ -21,7 +24,6 @@ const HEADER_ID = 'header'
 // plugin's "header" under this requestId, HEADER_ROWS tall; it stays put while the chat scrolls.
 const PINNED_REQUEST_ID = 'dante-header'
 const HEADER_ROWS = 5
-const PORTRAIT = { columns: 10, rows: 4 } as const
 // Beside the portrait: the name, then the session's figures, each a tile. They come from a file the
 // status line command (dist/feed.js) rewrites, read this often.
 const NAME_COLUMNS = 48
@@ -48,6 +50,7 @@ const journeyAtom = atom({ plugin: 'dante', key: 'journey' } as const, null, { s
 const transfersAtom = atom({ plugin: 'dante', key: 'transfers' } as const, [], { shape: 'transfers-1' })
 const tickAtom = atom({ plugin: 'dante', key: 'tick' } as const, 0)
 const NO_TASKS: TaskList = { title: '', all: {} }
+const filmsAtom = atom({ plugin: 'dante', key: 'films' } as const, NO_FILMS, { shape: 'films-1' })
 const tasksAtom = atom({ plugin: 'dante', key: 'tasks' } as const, NO_TASKS, { shape: 'tasks-2' })
 
 type CallState = { tool_use_id?: string | undefined; isRunning: boolean; isErrored: boolean; isInterrupted: boolean }
@@ -114,12 +117,14 @@ type Helper = {
   isOver: boolean
 }
 const REFUSED_MOST = 40
+/** The rehearsal's film, Night of the Living Dead: in the public domain. */
+const REHEARSED_FILM = 'tt0063350'
 
 async function runHelper($: EngineInterface, helper: Helper, node: string, first: string): Promise<void> {
   let pending = ''
   try {
     await $.fs.write(`${helper.dir}/state.json`, first)
-    const stream = $.process.spawn({ argv: [node, `${$.plugin.root}/../dist/pit/daemon.js`, `${helper.dir}/state.json`, `${helper.dir}/frames`] })
+    const stream = $.process.spawn({ argv: [node, `${$.plugin.root}/../dist/pit/daemon.js`, `${helper.dir}/state.json`, `${helper.dir}/frames`, `${helper.dir}/../../logos`] })
     for await (const piece of stream) {
       // Leaving the loop ends the process.
       if (helper.isOver) break
@@ -176,9 +181,15 @@ export const register: Register = on => {
   // The picture. It follows mirrors of the stored values, so a beat costs no round trip.
   let journeyNow: Journey | null = null
   let tasksNow: TaskList = NO_TASKS
+  let filmsNow: Films = NO_FILMS
   let transfersNow: readonly TransferRow[] = []
   let isWorking = false
   let turnFrom = 0
+  // The steps whose tools are running now, and Dante's portrait, which acts them out where the
+  // header is drawn.
+  let calls: readonly StepId[] = []
+  let portrait: Portrait = STILL
+  let portraitSite = PINNED_REQUEST_ID
   // Calls that ended well but stopped the request: nothing found, or a dead download.
   const stopped = new Set<string>()
   let animation: 'full' | 'calm' | 'off' = 'full'
@@ -238,6 +249,12 @@ export const register: Register = on => {
     }
   }
 
+  // What the helper needs to tell the film whose logo the screen shows at the end.
+  const film = (title: string) => {
+    if (rehearsal === undefined) return { title, ...filmsNow, isSearch: journeyNow !== null }
+    return rehearsal.film === '' ? { title, current: REHEARSED_FILM, seen: [], isSearch: true } : { query: rehearsal.film }
+  }
+
   // Why it stopped.
   const reason = (): string => (rehearsal?.isBroken === true ? words(lang).example : journeyNow?.status === 'failed' ? journeyNow.reason : '')
 
@@ -250,7 +267,9 @@ export const register: Register = on => {
 
   const helperState = (): string => {
     const to = target()
-    return JSON.stringify({ depth: to.depth, mood: to.mood, isDone: to.isDone, jump, pace: animation, heat: to.mood === 'failed' ? 0.06 : isWorking || rehearsal !== undefined ? 1 : 0.22, labels: { circles: words(lang).circles, ...marks(), ...numbers(), reason: reason() }, ...sizes() })
+    const shown = marks()
+    const title = rehearsal?.film || shown.title
+    return JSON.stringify({ depth: to.depth, mood: to.mood, isDone: to.isDone, jump, pace: animation, heat: to.mood === 'failed' ? 0.06 : isWorking || rehearsal !== undefined ? 1 : 0.22, labels: { circles: words(lang).circles, ...shown, title, ...numbers(), reason: reason() }, film: film(title), ...sizes() })
   }
 
   // What the helper needs this beat: to start, or to be told something.
@@ -276,13 +295,13 @@ export const register: Register = on => {
   }
 
   // The rehearsal: a made-up request to look at the circles with. Never mixed with a real one.
-  let rehearsal: { at: number; elapsed: number; isHeld: boolean; isBroken: boolean } | undefined
+  let rehearsal: { at: number; elapsed: number; isHeld: boolean; isBroken: boolean; film: string } | undefined
   let jump = 0
   let isRedrawDue = false
   const stop = (): Stop | undefined => (rehearsal === undefined ? undefined : REHEARSAL[rehearsal.at])
-  const rehearse = (at: number, isHeld: boolean, isBroken = false) => {
+  const rehearse = (at: number, isHeld: boolean, isBroken = false, film = '') => {
     const bounded = Math.max(0, Math.min(REHEARSAL.length - 1, at))
-    rehearsal = { at: bounded, elapsed: 0, isHeld, isBroken }
+    rehearsal = { at: bounded, elapsed: 0, isHeld, isBroken, film }
     jump += 1
     motion = { depth: REHEARSAL[bounded]?.depth ?? 0, stars: 0 }
     isRedrawDue = true
@@ -309,6 +328,16 @@ export const register: Register = on => {
     return progressOf({ journey: journeyNow, tasks: tally(), download: downloadOf(transfersNow), isWorking })
   }
 
+  const doing = () => {
+    const shown = stop()
+    if (shown === undefined || rehearsal === undefined) {
+      const { mood, isDone } = target()
+      return doingOf({ calls, isFailed: mood === 'failed', isDone, isWorking })
+    }
+    const step = STEPS[shown.now]
+    return doingOf({ calls: step === undefined || rehearsal.isBroken ? [] : [step], isFailed: rehearsal.isBroken, isDone: shown.isDone === true, isWorking: shown.depth >= 0 })
+  }
+
   const pitCells = (): string | undefined =>
     pit === undefined
       ? undefined
@@ -317,7 +346,7 @@ export const register: Register = on => {
   const ruleCells = (columns: number): string => drawRule(columns, seconds, target().mood === 'failed' ? 0 : isWorking || rehearsal !== undefined ? 1 : 0.2)
 
   // One beat: move the picture on, and say what needs repainting.
-  const beat = (): { pit?: string; rule?: string } => {
+  const beat = (): { pit?: string; rule?: string; portrait?: string } => {
     const to = target()
     const isBusy = isWorking || rehearsal !== undefined || !isSettled(motion, to)
     beats += 1
@@ -331,7 +360,7 @@ export const register: Register = on => {
         if (rehearsal.elapsed > shown.seconds) rehearsal.elapsed = 0
       } else if (rehearsal.elapsed > shown.seconds) {
         if (rehearsal.at + 1 >= REHEARSAL.length) endRehearsal()
-        else rehearsal = { at: rehearsal.at + 1, elapsed: 0, isHeld: false, isBroken: false }
+        else rehearsal = { ...rehearsal, at: rehearsal.at + 1, elapsed: 0 }
         isRedrawDue = true
       }
     }
@@ -342,7 +371,14 @@ export const register: Register = on => {
     // The rule burns while Dante works, and one last cold repaint puts it out.
     const isRuleDue = ruleColumns > 0 && animation !== 'off' && (isWorking ? isDue : isRuleHot)
     isRuleHot = isWorking
+    // Calm, he acts at half the speed and stands still between requests.
+    const before = pictureOf(portrait)
+    const now = doing()
+    const isStill = !isPicture || animation === 'off' || (animation === 'calm' && (beats % 2 === 1 || (isStanding(portrait) && now === portrait.doing)))
+    if (!isStill) portrait = nextPicture(portrait, now)
+    const after = pictureOf(portrait)
     return {
+      ...(after === before ? {} : { portrait: after }),
       ...(isPitUp && isDue ? { pit: pitCells() } : {}),
       ...(isRuleDue ? { rule: ruleCells(ruleColumns) } : {}),
     }
@@ -371,6 +407,7 @@ export const register: Register = on => {
     // A reload starts the module over; what was stored is still there.
     journeyNow = await read($, journeyAtom)
     tasksNow = await read($, tasksAtom)
+    filmsNow = await read($, filmsAtom)
     transfersNow = await read($, transfersAtom)
     motion = { depth: target().depth, stars: target().isDone ? 1 : 0 }
 
@@ -399,6 +436,10 @@ export const register: Register = on => {
             .catch(() => {
               isPitUp = false
             })
+        }
+        if (due.portrait !== undefined) {
+          // A header that is not on screen refuses it, which is fine.
+          void $.ui.blit({ requestId: portraitSite, key: 'portrait', source: { file: `${$.plugin.root}/${due.portrait}`, format: 'png' } }).catch(() => undefined)
         }
         if (due.rule !== undefined) {
           void $.ui
@@ -449,11 +490,13 @@ export const register: Register = on => {
   on('command.run', { command: 'inferno' }, async ($, e) => {
     const asked = e.args.trim().toLowerCase()
     const broken = /^error(?:\s+([1-9]))?$/.exec(asked)
+    const starred = /^stars(?:\s+(.+))?$/.exec(asked)
     const circle = /^[1-9]$/.test(asked) ? Number(asked) : broken !== null ? Number(broken[1] ?? 5) : undefined
-    if (asked === 'demo' || circle !== undefined) {
+    if (asked === 'demo' || circle !== undefined || starred !== null) {
       await $.store.set('pane', 'open')
       await $.ui.open({ id: PANE_ID, title: 'Inferno', columns: PANE_COLUMNS })
-      if (circle === undefined) rehearse(0, false)
+      if (starred !== null) rehearse(REHEARSAL.length - 1, true, false, starred[1] ?? '')
+      else if (circle === undefined) rehearse(0, false)
       else rehearse(stopOf(circle), true, broken !== null)
       return { text: words(lang).rehearsing }
     }
@@ -502,6 +545,8 @@ export const register: Register = on => {
     return next(e)
   })
 
+  const titleIn = (input: object): string => ('title' in input && typeof input.title === 'string' ? input.title : '')
+
   // The journey: which step the current request is in. Other requests: their task list.
   on('tool.call', async ($, e, next) => {
     const isDubbing = e.tool === 'Bash' && isDub(e.tool, e.command)
@@ -510,6 +555,11 @@ export const register: Register = on => {
 
     if (tool === undefined) {
       const ran = await next(e)
+      if (ran.deny === undefined) {
+        // A film may go by in any call: a command that opens it on the TV, an answer that lists it.
+        const ids = [...idsIn(JSON.stringify(e)), ...(e.tool === 'Bash' ? idsIn(outputText(ran.result ?? ran.text)) : [])]
+        if (ids.length > 0) filmsNow = await update($, filmsAtom, films => ids.reduce((all, id) => withFilm(all, { id, name: '' }), films))
+      }
       if (e.agentId === undefined && ran.deny === undefined && ran.isError !== true) {
         const change = taskChange(e.tool, e, ran.result)
         if (change !== undefined) {
@@ -541,10 +591,20 @@ export const register: Register = on => {
       }
     }
 
-    const ran = await next(e)
+    if (step !== undefined) calls = [...calls, step]
+    const ran = await next(e).finally(() => {
+      const mine = step === undefined ? -1 : calls.lastIndexOf(step)
+      if (mine >= 0) calls = calls.toSpliced(mine, 1)
+    })
     const hasFailed = ran.deny !== undefined || ran.isError === true
 
     // Steps Claude declares for a request that is not about a film.
+    if (!hasFailed) {
+      const answered = outputText(ran.result ?? ran.text)
+      const isNewList = tool === 'progress' && titleIn(e) !== tasksNow.title
+      filmsNow = await update($, filmsAtom, films => afterCall(films, tool, e, answered, isNewList))
+    }
+
     const steps = tool === 'progress' && !hasFailed ? declaredSteps(e) : undefined
     if (steps !== undefined) {
       journeyNow = await update($, journeyAtom, () => null)
@@ -616,6 +676,7 @@ export const register: Register = on => {
   on('turn.complete', async ($, e, next) => {
     if (e.agentId === undefined) {
       isWorking = false
+      calls = []
       // A failure is shown until a whole turn has gone by without it.
       journeyNow = await update($, journeyAtom, j => (j !== null && j.status === 'failed' && (j.endedAt ?? 0) < turnFrom ? null : j))
       stopTicking?.()
@@ -630,6 +691,7 @@ export const register: Register = on => {
       return next(e)
     }
     const { Box, Image, Raster, Text } = $.ui.resolve(e)
+    portraitSite = isPinned && isFullscreen !== false ? PINNED_REQUEST_ID : e.requestId
     // The slot is as wide as the terminal; with a pane docked the viewport is the chat's alone.
     const across = Math.max(1, Math.min(RULE_COLUMNS, (e.viewport?.columns ?? 80) + docked))
     const inked = (pieces: readonly Piece[]) => pieces.map((piece, n) => <Text key={`piece${n}`} color={piece.color} bold={piece.bold === true}>{piece.text}</Text>)
@@ -638,7 +700,8 @@ export const register: Register = on => {
     const identity = (
       <Box flexDirection="row" height={PORTRAIT.rows}>
         <Image
-          source={{ file: `${$.plugin.root}/art/dante.png`, format: 'png' }}
+          key="portrait"
+          source={{ file: `${$.plugin.root}/${pictureOf(portrait)}`, format: 'png' }}
           columns={PORTRAIT.columns}
           rows={PORTRAIT.rows}
           alt="Dante"

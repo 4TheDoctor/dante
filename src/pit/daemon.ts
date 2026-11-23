@@ -3,10 +3,10 @@
 // frame is a PNG file; its path goes to stdout and from there to the terminal, which reads the file
 // itself, so no pixel crosses the chat.
 //
-//   node daemon.js <state.json> <out dir>
+//   node daemon.js <state.json> <out dir> [<dir to keep logos in>]
 //
 // state.json, rewritten by the mod as the request moves on:
-//   { depth, mood, isDone, labels, jump, pace: "full" | "calm" | "off",
+//   { depth, mood, isDone, labels, film?: { title, current, seen, isSearch } | { query }, jump, pace: "full" | "calm" | "off",
 //     pit?: { width, height, scale }, rule?: { width, height, scale, parts? }, heat, stop? }
 // Sizes are screen pixels; scale is how many of them one pixel of the drawing takes. A picture may
 // not be wider than 255 cells, so a longer rule comes in the two `parts`, whose widths add up to it.
@@ -14,6 +14,9 @@
 // and, for its second part, `rule2 …`.
 import { mkdirSync, readFileSync, renameSync, rmdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
+import { findTitle } from '../title.js'
+import { chooseFilm, type Ask } from './film.js'
+import { decodePng, fetchLogo, type Picture } from './logo.js'
 import { encodePng } from './png.js'
 import { CLEAR, Rule } from './rule.js'
 import { Pit, type Goal, type Labels } from './scene.js'
@@ -33,6 +36,8 @@ type Kind = 'pit' | 'rule' | 'rule2'
 
 interface State extends Goal {
   labels?: Labels
+  /** What tells the film whose logo is shown at the end, or a name to look up. */
+  film?: Ask | { query: string }
   pace: 'full' | 'calm' | 'off'
   /** Changes when they are to be put at `depth` at once. */
   jump?: number
@@ -48,7 +53,7 @@ const REST_AFTER_S = 300
 const LOST_AFTER_MS = 15_000
 const FILES = 4
 
-const [stateArg, outArg] = process.argv.slice(2)
+const [stateArg, outArg, logosArg] = process.argv.slice(2)
 if (!stateArg || !outArg) {
   process.stderr.write('usage: daemon <state.json> <out dir>\n')
   process.exit(2)
@@ -64,6 +69,11 @@ const parent = process.ppid
 let state: State = { depth: -1, mood: 'idle', isDone: false, pace: 'full' }
 let pit: { size: Size; scene: Pit; count: number } | undefined
 let rule: { size: RuleSize; bed: Rule; count: number } | undefined
+let asked = ''
+let shownId = ''
+let caption = ''
+let picture: Picture | undefined
+const names = new Map<string, Promise<string>>()
 let mtime = -1
 let seenAt = Date.now()
 let changed = true
@@ -97,12 +107,51 @@ function resize(): void {
     const scene = new Pit(Math.ceil(state.pit.width / state.pit.scale), Math.ceil(state.pit.height / state.pit.scale))
     // A new size picks up where the request is; a first one starts before the gate.
     if (pit !== undefined) scene.place(state.depth)
+    scene.show(picture)
     pit = { size: state.pit, scene, count: pit?.count ?? 0 }
   }
   if (!isSize(state.rule)) rule = undefined
   else if (rule === undefined || !isSame(rule.size, state.rule)) {
     rule = { size: state.rule, bed: new Rule(Math.ceil(state.rule.width / state.rule.scale), Math.ceil(state.rule.height / state.rule.scale)), count: rule?.count ?? 0 }
   }
+}
+
+const nameOf = (id: string): Promise<string> => {
+  const known = names.get(id)
+  if (known !== undefined) return known
+  const name = findTitle(id).then(found => found[0]?.name ?? '')
+  names.set(id, name)
+  return name
+}
+
+const label = (): void => {
+  if (pit !== undefined && state.labels !== undefined) pit.scene.labels = { ...state.labels, caption }
+}
+
+/** Fetch the logo of the film on show. Without one, or without a network, its title stays in letters. */
+function follow(): void {
+  const { film } = state
+  const ask = JSON.stringify(film ?? null)
+  if (ask === asked) return
+  asked = ask
+  const look = async (): Promise<void> => {
+    const found =
+      film === undefined ? undefined : 'query' in film ? await findTitle(film.query).then(([first]) => (first === undefined ? undefined : { id: first.imdbId, caption: '' })) : await chooseFilm(film, nameOf)
+    // Something else may have been asked meanwhile.
+    if (ask !== asked) return
+    caption = found?.caption ?? ''
+    const id = found?.id ?? ''
+    if (id !== shownId) {
+      const file = id === '' ? undefined : await fetchLogo(id, logosArg === undefined ? undefined : resolve(logosArg)).catch(() => undefined)
+      if (ask !== asked) return
+      shownId = id
+      picture = file === undefined ? undefined : decodePng(file)
+      pit?.scene.show(picture)
+    }
+    label()
+    changed = true
+  }
+  void look().catch(() => undefined)
 }
 
 function reload(): void {
@@ -116,7 +165,8 @@ function reload(): void {
     state = { depth, mood, isDone, pace, ...(JSON.parse(readFileSync(statePath, 'utf8')) as Partial<State>) }
     changed = true
     resize()
-    if (pit !== undefined && state.labels !== undefined) pit.scene.labels = state.labels
+    follow()
+    label()
     if (state.jump !== undefined && state.jump !== jumped) {
       jumped = state.jump
       if (jumped > 0) pit?.scene.place(state.depth)

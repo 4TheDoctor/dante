@@ -42,6 +42,17 @@ export type TransferRow = {
 /** How far a request that is not about a film has got. */
 export type TaskTally = { total: number; done: number }
 
+/** A film or series the session came across. */
+export type Film = {
+  /** IMDb id. */
+  id: string
+  /** Empty when only the id is known. */
+  name: string
+}
+
+/** Those it came across, the latest last, and the one the request is about, when a tool said so. */
+export type Films = { seen: Film[]; current: string | null }
+
 /** Its steps: declared with Dante's `progress` tool, or from Claude Code's own task list. */
 export type TaskList = { title: string; all: Record<string, 'open' | 'done'> }
 
@@ -52,6 +63,7 @@ declare module 'claude-code' {
       transfers: Shaped<TransferRow[]>
       tick: number
       tasks: Shaped<TaskList>
+      films: Shaped<Films>
     }
   }
 }

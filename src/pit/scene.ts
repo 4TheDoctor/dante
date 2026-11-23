@@ -2,7 +2,8 @@
 // from the catalogue down to the player. Dante and his robot guide wait before the gate, cross the
 // torrent, walk the ledges and climb down as the request really advances, and come out to a film
 // under the stars when it is done. Pixels are palette indexes (palette.ts).
-import { FLAME, LEVELS, RAMP, SPOT, type RampName } from './palette.js'
+import { pixelLogo, type Logo, type Picture } from './logo.js'
+import { FLAME, inkLogo, LEVELS, LOGO, RAMP, SPOT, type RampName } from './palette.js'
 import { capitals, CAR, CRATE, DANTE, DANTE_DOWN, DOWN, FERRYMAN, FILE, FOSSILS, POPCORN, REEL, stamp, textWidth, UP, VIRGIL, VIRGIL_DOWN, WARNING, wrap, write, writeBig, type Canvas } from './sprites.js'
 
 export type Mood = 'idle' | 'running' | 'done' | 'failed'
@@ -13,6 +14,8 @@ export interface Labels {
   circles: readonly string[]
   /** What is being looked for: on the screen, at the end. */
   title: string
+  /** What to write under the film's logo, where there is one: "S03E06". */
+  caption?: string
   /** What each of the five steps found: results, cache, download… Empty until it has. */
   facts: readonly string[]
   /** Which of the five steps are done, and which one is under way (-1: none). */
@@ -158,6 +161,10 @@ export class Pit {
   private fault = -1
   t = 0
   stars = 0
+  /** The logo of the film that is served, as it came and as it is shown. */
+  private picture: Picture | undefined
+  private logo: Logo | undefined
+  private logoFor: boolean | undefined
   // Where Virgil is; Dante walks where he has been.
   private ring = -1
   private along = 0.4
@@ -1434,14 +1441,36 @@ export class Pit {
     return px
   }
 
-  /** On the screen: the leader counts down, then the title. */
+  /** Show this film's logo on the screen, or the title in letters. */
+  show(picture: Picture | undefined): void {
+    this.picture = picture
+    this.logo = undefined
+    this.logoFor = undefined
+  }
+
+  /** The logo at the size that leaves room for what is written under it. */
+  private fitted(caption: string): Logo | undefined {
+    if (this.picture === undefined) return undefined
+    if (this.logoFor !== (caption !== '')) {
+      const s = this.screen()
+      this.logoFor = caption !== ''
+      this.logo = pixelLogo(this.picture, s.w - 14, s.h - 12 - (caption === '' ? 0 : 11))
+      if (this.logo !== undefined) inkLogo(this.logo.colors)
+    }
+    return this.logo
+  }
+
+  /** On the screen: the leader counts down, then the film's logo burns in, or its title is written. */
   private paintFilm(canvas: Canvas, set: (x: number, y: number, color: number) => void): void {
     const { t } = this
     const s = this.screen()
     const cx = s.x + s.w / 2
     const cy = s.y + s.h / 2
-    const beat = (t * 1.5) % 9
+    const caption = capitals(this.labels.caption ?? '')
+    const logo = this.fitted(caption)
+    const beat = (t * 1.5) % (logo === undefined ? 9 : 24)
     const isLeader = beat < 3
+    const isDark = logo?.isLight === true && !isLeader
     const flicker = noise(1, Math.floor(t * 20), 92) < 0.12
     for (let y = s.y; y < s.y + s.h; y++) {
       for (let x = s.x; x < s.x + s.w; x++) {
@@ -1451,20 +1480,29 @@ export class Pit {
           if (a < (beat % 1) * Math.PI * 2) color = SPOT.hair
           const r = Math.hypot(x - cx, y - cy)
           if (Math.abs(r - s.h * 0.4) < 0.7 || Math.abs(r - s.h * 0.3) < 0.7 || Math.abs(x - cx) < 0.6 || Math.abs(y - cy) < 0.6) color = SPOT.togaDark
-        } else if (Math.hypot((x - cx) / s.w, (y - cy) / s.h) > 0.52 - (bayer(x, y) / 16) * 0.1) color = SPOT.togaShade
-        if (flicker && bayer(x, y) > 11) color = SPOT.togaShade
+        } else {
+          const edge = Math.hypot((x - cx) / s.w, (y - cy) / s.h) + (bayer(x, y) / 16) * 0.1
+          const isBorder = x === s.x || y === s.y || x === s.x + s.w - 1 || y === s.y + s.h - 1
+          if (isDark) color = RAMP.stone + (isBorder ? 4 : edge > 0.56 ? 0 : edge > 0.44 ? 1 : 2)
+          else if (edge > 0.52) color = SPOT.togaShade
+        }
+        if (flicker && bayer(x, y) > 11) color = isDark ? RAMP.stone + 2 : SPOT.togaShade
         set(x, y, color)
       }
     }
     for (let n = 0; n < 2; n++) {
       const x = s.x + Math.floor(noise(n, Math.floor(t * 7), 93) * s.w)
-      for (let y = s.y; y < s.y + s.h; y++) if (noise(n, y >> 2, Math.floor(t * 7) + 94) < 0.5) set(x, y, SPOT.hair)
+      for (let y = s.y; y < s.y + s.h; y++) if (noise(n, y >> 2, Math.floor(t * 7) + 94) < 0.5) set(x, y, isDark ? RAMP.stone + 3 : SPOT.hair)
     }
     if (isLeader) {
       // A digit, each of its pixels four of these.
       const glyphs: Record<string, string> = { 3: '110001010001110', 2: '110001010100111', 1: '010110010010111' }
       const glyph = glyphs[String(3 - Math.floor(beat))] ?? ''
       for (let k = 0; k < 15; k++) if (glyph[k] === '1') for (let a = 0; a < 5; a++) for (let b = 0; b < 5; b++) set(cx - 7 + (k % 3) * 5 + a, cy - 12 + Math.floor(k / 3) * 5 + b, SPOT.outline)
+      return
+    }
+    if (logo !== undefined) {
+      this.paintLogo(canvas, set, logo, caption, (beat - 3) / 1.5)
       return
     }
     const title = capitals(this.labels.title)
@@ -1474,6 +1512,36 @@ export class Pit {
     }
     const lines = wrap(title, s.w - 10, 4)
     lines.forEach((line, n) => write(canvas, line, Math.round(cx - textWidth(line) / 2), Math.round(cy - lines.length * 4 + n * 8 + 1), SPOT.robeDark))
+  }
+
+  /** The logo, `since` seconds after the leader: it burns in from the left, and later a light runs over it. */
+  private paintLogo(canvas: Canvas, set: (x: number, y: number, color: number) => void, logo: Logo, caption: string, since: number): void {
+    const s = this.screen()
+    const jump = noise(1, Math.floor(this.t * 6), 97) < 0.05 ? 1 : 0
+    const left = Math.round(s.x + (s.w - logo.w) / 2)
+    const top = Math.round(s.y + (s.h - logo.h - (caption === '' ? 0 : 11)) / 2) + jump
+    const burnt = since / 2.2
+    const shine = ((since - 5) / 1.8) * (logo.w + logo.h)
+    const isIn = (x: number, y: number): boolean => x >= 0 && y >= 0 && x < logo.w && y < logo.h && logo.px[y * logo.w + x] !== 0
+    /** How long ago it burnt in, as a share; below 0 it has not. */
+    const age = (x: number, y: number): number => burnt - ((x / logo.w) * 0.75 + (bayer(x, y) / 16) * 0.12 + noise(x >> 1, y >> 1, 98) * 0.13)
+    if (!logo.isLight) {
+      // On the bright screen it throws a shadow.
+      for (let y = 0; y < logo.h; y++) for (let x = 0; x < logo.w; x++) if (isIn(x, y) && !isIn(x + 1, y + 1) && age(x, y) > 0.1) set(left + x + 1, top + y + 1, SPOT.togaShade)
+    }
+    for (let y = 0; y < logo.h; y++) {
+      for (let x = 0; x < logo.w; x++) {
+        if (!isIn(x, y)) continue
+        const old = age(x, y)
+        if (old < 0) continue
+        const isShining = Math.abs(x + y - shine) < 3
+        const ember = RAMP.fire + Math.max(3, 6 - Math.floor(old * 34))
+        set(left + x, top + y, old < 0.1 ? ember : isShining ? SPOT.star : LOGO + logo.px[y * logo.w + x]! - 1)
+      }
+    }
+    if (caption === '' || since < 2.6) return
+    const line = wrap(caption, s.w - 10, 1)[0] ?? ''
+    write(canvas, line, Math.round(s.x + (s.w - textWidth(line)) / 2), s.y + s.h - 12 + jump, logo.isLight ? RAMP.gold + 4 : SPOT.robeDark)
   }
 }
 

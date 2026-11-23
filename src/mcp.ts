@@ -249,11 +249,12 @@ export function buildServer(dante = new Dante(loadConfig())): McpServer {
     'progress',
     {
       description:
-        'Show the person how far along a request is: it moves Dante down the circles beside the chat. For requests of three or more steps that find_title, search_streams, check_cache, add_to_debrid and play do not already cover. Call it once at the start with done 0 and the number of steps, then once after each step that is really finished.',
+        'Show the person how far along a request is: it moves Dante down the circles beside the chat. For requests of three or more steps that find_title, search_streams, check_cache, add_to_debrid and play do not already cover. Call it once at the start with done 0 and the number of steps, then once after each step that is really finished. When it is about one film or series, pass its imdb_id.',
       inputSchema: {
         title: z.string().max(80).describe('What is being done, in a few words'),
         total: z.number().int().min(1).max(50),
         done: z.number().int().min(0).max(50),
+        imdb_id: z.string().regex(/^tt\d+$/).optional().describe('The film or series it is about, when known: its logo is shown at the end'),
       },
     },
     async ({ title, total, done }) => text(`${title}: ${Math.min(done, total)} of ${total} steps done.`),

@@ -102,5 +102,15 @@ export const FLAME: readonly (readonly number[])[] = FLAMES.map(colors => colors
 
 export const SPOT = Object.fromEntries(Object.entries(SPOTS).map(([name, hex]) => [name, push(hex)])) as Record<SpotName, number>
 
+/** Places kept for the colours of a film's logo, and the first of them. */
+export const LOGO_COLORS = 20
+export const LOGO = rgb.length / 3
+for (let n = 0; n < LOGO_COLORS; n++) push('000000')
+
 /** Every colour, as bytes: what a PNG's PLTE chunk holds. */
 export const PLTE = Uint8Array.from(rgb)
+
+/** Put a logo's colours in their places. */
+export function inkLogo(colors: readonly (readonly [number, number, number])[]): void {
+  colors.slice(0, LOGO_COLORS).forEach((color, n) => PLTE.set(color, (LOGO + n) * 3))
+}
