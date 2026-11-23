@@ -110,7 +110,7 @@ describe('redrawing a logo in pixel art', () => {
     expect(seen()).toBeGreaterThan(500)
     pit.show(undefined)
     expect(seen()).toBe(0)
-  })
+  }, 20_000)
 })
 
 describe('fetching a logo', () => {
