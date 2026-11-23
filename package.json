@@ -1,0 +1,30 @@
+{
+  "name": "@4thedoctor/dante",
+  "version": "0.1.0",
+  "description": "An AI media concierge for Claude Code: finds films and series across your engines, checks your debrid cache, picks by your preferences and plays them.",
+  "license": "MIT",
+  "author": "The Doc (4TheDoctor)",
+  "homepage": "https://github.com/4TheDoctor/dante",
+  "repository": { "type": "git", "url": "git+https://github.com/4TheDoctor/dante.git" },
+  "keywords": ["claude-code", "mcp", "debrid", "stremio", "alldebrid", "real-debrid", "torbox", "aiostreams", "jackett", "prowlarr"],
+  "type": "module",
+  "bin": { "dante": "dist/cli.js" },
+  "files": ["dist", "plugin", "template", "README.md", "README.es.md", "DISCLAIMER.md", "LICENSE"],
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "build": "tsc -p tsconfig.json && chmod +x dist/cli.js",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "prepack": "npm run build"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "smol-toml": "^1.9.1",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.0",
+    "typescript": "^5.9.3",
+    "vitest": "^5.1.1"
+  }
+}
