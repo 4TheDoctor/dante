@@ -1,4 +1,4 @@
-# Template for 4TheDoctor/homebrew-tap: Formula/dante.rb. The release workflow fills url and sha256.
+# Template for a future 4TheDoctor/homebrew-tap: Formula/dante.rb. Not published; fill url and sha256 on release.
 class Dante < Formula
   desc "AI media concierge for Claude Code: search, debrid cache, preferences, playback"
   homepage "https://github.com/4TheDoctor/dante"
