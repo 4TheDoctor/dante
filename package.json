@@ -10,7 +10,7 @@
   "type": "module",
   "bin": { "dante": "dist/cli.js" },
   "files": ["dist", "plugin", "template", "README.md", "README.es.md", "DISCLAIMER.md", "LICENSE"],
-  "engines": { "node": ">=20" },
+  "engines": { "node": ">=22" },
   "scripts": {
     "build": "tsc -p tsconfig.json && chmod +x dist/cli.js",
     "test": "vitest run",

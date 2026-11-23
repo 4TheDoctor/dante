@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { streamToCandidate, type StremioStream } from '../src/engines/stremio-addon.js'
-import { parseRelease, rank } from '../src/rank.js'
+import { mergeInfo, parseRelease, rank } from '../src/rank.js'
 import type { Candidate, Preferences } from '../src/types.js'
 
 describe('parseRelease', () => {
@@ -40,6 +40,17 @@ describe('parseRelease', () => {
       if (Array.isArray(value)) expect([...(info[key] as string[])].sort(), key).toEqual([...value].sort())
       else expect(info[key], key).toEqual(value)
     }
+  })
+})
+
+describe('mergeInfo', () => {
+  it('fills what the file name leaves out from the folder', () => {
+    const merged = mergeInfo(
+      parseRelease('Pelicula 4Kremux2160.www.example.mkv'),
+      parseRelease('Pelicula [4K UHDremux 2160p][HDR10][Castellano AC3 2.0-Ingles AC3 2.0+Subs][ES-EN]'),
+    )
+    expect(merged).toMatchObject({ resolution: '2160p', source: 'REMUX', hdr: ['HDR10'], channels: '2.0' })
+    expect(merged.languages).toEqual(expect.arrayContaining(['spa', 'eng']))
   })
 })
 

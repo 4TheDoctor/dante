@@ -38,7 +38,7 @@ const HDRS: Array<[RegExp, HdrFormat]> = [
 /** Checked in this order: the first match wins. */
 const SOURCES: Array<[RegExp, SourceKind]> = [
   [W('bdmv|complete (?:uhd )?blu-?ray|full blu-?ray|bd25|bd50|bd66|bd100|uhd bd'), 'BDMV'],
-  [W('remux|bdremux'), 'REMUX'],
+  [W('remux|bdremux|uhdremux|uhd-remux|4kremux'), 'REMUX'],
   [W('cam|hdcam|camrip|ts|telesync|hdts|tc|telecine'), 'CAM'],
   [W('webrip|web-?dlrip|web-rip'), 'WEBRip'],
   [W('web-?dl|webdl|web|amzn|nf|dsnp|hmax|atvp|pmtp|sky'), 'WEB-DL'],
@@ -173,6 +173,30 @@ export function parseRelease(name: string): ReleaseInfo {
   }
 }
 
+/**
+ * What the file and its folder say together. The file name wins; the folder fills the gaps
+ * (Spanish releases often put resolution, HDR and audio only in the folder name).
+ */
+export function mergeInfo(file: ReleaseInfo, folder: ReleaseInfo | undefined): ReleaseInfo {
+  if (!folder) return file
+  const list = (a: string[], b: string[]) => (a.length ? a : b)
+  return {
+    ...file,
+    resolution: file.resolution ?? folder.resolution,
+    hdr: file.hdr.length ? file.hdr : folder.hdr,
+    source: file.source ?? folder.source,
+    codec: file.codec ?? folder.codec,
+    audio: list(file.audio, folder.audio),
+    channels: file.channels ?? folder.channels,
+    languages: list(file.languages, folder.languages),
+    multi: file.multi || folder.multi,
+    dual: file.dual || folder.dual,
+    season: file.season ?? folder.season,
+    episode: file.episode ?? folder.episode,
+    pack: file.pack || folder.pack,
+  }
+}
+
 const GB = 1024 ** 3
 
 /**
@@ -180,8 +204,9 @@ const GB = 1024 ** 3
  * user (or the model) can check why something ranked where it did.
  */
 export function rankOne(candidate: Candidate, prefs: Preferences): Ranked | undefined {
-  const info = parseRelease(candidate.name)
+  const fileInfo = parseRelease(candidate.name)
   const folderInfo = candidate.folder ? parseRelease(candidate.folder) : undefined
+  const info = mergeInfo(fileInfo, folderInfo)
   const reasons: string[] = []
   let score = 0
   const add = (points: number, why: string) => {
@@ -190,7 +215,7 @@ export function rankOne(candidate: Candidate, prefs: Preferences): Ranked | unde
   }
 
   const s = spaced(`${candidate.name} ${candidate.folder ?? ''}`)
-  const source = info.source ?? folderInfo?.source
+  const source = info.source
   // An avoided word removes the result when it is in the name, or when it names the source
   // (CAM catches HDCAM and telesyncs) or a flag (3D).
   const kinds = [source, ...info.flags].filter(Boolean).map(k => k!.toLowerCase())
@@ -199,7 +224,7 @@ export function rankOne(candidate: Candidate, prefs: Preferences): Ranked | unde
     if (hasWord(s, w) || kinds.includes(w)) return undefined
   }
 
-  const resolution = info.resolution ?? folderInfo?.resolution
+  const resolution = info.resolution
   if (resolution) {
     const i = prefs.resolutions.indexOf(resolution)
     if (i >= 0) add(40 - 10 * i, `${resolution} (preference ${i + 1} of ${prefs.resolutions.length})`)
@@ -208,7 +233,7 @@ export function rankOne(candidate: Candidate, prefs: Preferences): Ranked | unde
     add(-10, 'resolution unknown')
   }
 
-  const hdr = info.hdr.length ? info.hdr : (folderInfo?.hdr ?? [])
+  const hdr = info.hdr
   const hdrRanks = hdr.map(h => prefs.hdr.indexOf(h)).filter(i => i >= 0)
   if (hdrRanks.length) {
     const best = Math.min(...hdrRanks)
@@ -217,8 +242,8 @@ export function rankOne(candidate: Candidate, prefs: Preferences): Ranked | unde
     add(0, '4K without HDR')
   }
 
-  const languages = [...new Set([...info.languages, ...(folderInfo?.languages ?? []), ...candidate.languages])]
-  const multi = info.multi || info.dual || candidate.multiAudio || Boolean(folderInfo?.multi || folderInfo?.dual)
+  const languages = [...new Set([...fileInfo.languages, ...(folderInfo?.languages ?? []), ...candidate.languages])]
+  const multi = info.multi || info.dual || candidate.multiAudio
   let missingLanguage = false
   if (prefs.languages.length) {
     const i = prefs.languages.findIndex(l => languages.includes(l))
