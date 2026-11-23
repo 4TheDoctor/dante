@@ -32,6 +32,8 @@ const schema = z.object({
   ui_language: z.enum(['en', 'es']).default('en'),
   /** How much the Inferno moves: all the time, only while working, or not at all. */
   animation: z.enum(['full', 'calm', 'off']).default('full'),
+  /** How the circles are drawn: as pictures (kitty, Ghostty), or with block characters anywhere. */
+  graphics: z.enum(['auto', 'image', 'blocks']).default('auto'),
   preferences: z
     .object({
       resolutions: z.array(resolution).default(['2160p', '1080p']),

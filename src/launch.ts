@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { accessSync, constants, copyFileSync, existsSync, mkdirSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
@@ -53,6 +53,23 @@ export function claudeArgs(extra: string[]): string[] {
   return ['--plugin-dir', plugin, '--settings', join(plugin, 'settings.json'), ...extra]
 }
 
+/** Whether this terminal shows pictures read from a file (the kitty graphics protocol). */
+export function drawsPictures(graphics: 'auto' | 'image' | 'blocks', env: NodeJS.ProcessEnv = process.env): boolean {
+  if (graphics !== 'auto') return graphics === 'image'
+  if (env.TMUX || env.SSH_CONNECTION) return false
+  return env.TERM_PROGRAM === 'ghostty' || env.TERM === 'xterm-ghostty' || env.TERM === 'xterm-kitty' || Boolean(env.KITTY_WINDOW_ID)
+}
+
+/** Pixels of one terminal cell, as "7x18". Empty when the terminal does not say. */
+function cellSize(): string {
+  const asked = spawnSync(process.execPath, [join(packageRoot(), 'dist', 'pit', 'cell.js')], {
+    stdio: ['inherit', 'pipe', 'inherit'],
+    timeout: 1500,
+    encoding: 'utf8',
+  })
+  return /^\d+x\d+$/.test(asked.stdout ?? '') ? asked.stdout : ''
+}
+
 /** Ember-dark terminal background while Dante runs (OSC 11); the terminal's own comes back after (OSC 111). */
 const BACKDROP = '#140C0A'
 
@@ -77,10 +94,12 @@ export async function launch(extra: string[]): Promise<number> {
   installTheme()
   let lang = 'en'
   let animation = 'full'
+  let graphics: 'auto' | 'image' | 'blocks' = 'auto'
   try {
     const config = loadConfig(home)
     lang = config.ui_language
     animation = config.animation
+    graphics = config.graphics
   } catch {
     // A broken dante.toml is reported by the MCP server and doctor; the look falls back to English.
   }
@@ -89,7 +108,14 @@ export async function launch(extra: string[]): Promise<number> {
   if (tty) process.stdout.write(`\x1b]11;${BACKDROP}\x07`)
   const child = spawn(claude, claudeArgs(extra), {
     stdio: 'inherit',
-    env: { ...process.env, DANTE_HOME: home, DANTE_UI_LANG: lang, DANTE_ANIMATION: animation },
+    env: {
+      ...process.env,
+      DANTE_HOME: home,
+      DANTE_UI_LANG: lang,
+      DANTE_ANIMATION: animation,
+      DANTE_NODE: process.execPath,
+      ...(drawsPictures(graphics) ? { DANTE_GRAPHICS: 'image', DANTE_CELL: cellSize() } : { DANTE_GRAPHICS: 'blocks' }),
+    },
   })
   // Claude Code reads Ctrl+C itself; this process only waits for it.
   const ignore = () => {}

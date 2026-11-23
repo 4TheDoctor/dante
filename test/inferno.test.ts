@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { CIRCLES, draw, drawRule, makeScene, PALETTE, toCells, type Mood } from '../plugin/hooks/inferno'
-import { declaredSteps, downloadOf, isDub, targetOf, taskChange } from '../plugin/hooks/parse'
+import { declaredSteps, downloadOf, isDub, pitSize, readFrames, targetOf, taskChange } from '../plugin/hooks/parse'
 import { advance, isSettled, progressOf } from '../plugin/hooks/progress'
 import { words } from '../plugin/hooks/words'
 import type { Journey } from '../plugin/types'
@@ -125,6 +125,20 @@ describe('the drawing', () => {
     const tops = [0, 2, 4, 6, 8].map(topOf)
     expect([...tops].sort((a, b) => a - b)).toEqual(tops)
     expect(tops[0]).toBeLessThan(tops[4]!)
+  })
+})
+
+describe('pictures from the helper', () => {
+  it('reads whole lines only, and keeps the newest frame', () => {
+    expect(readFrames('', 'pit /a/pit0.png 1\npit /a/pit1.png 2\npit /a/pi')).toEqual({ rest: 'pit /a/pi', frame: { file: '/a/pit1.png', generation: 2 } })
+    expect(readFrames('pit /a/pi', 't2.png 3\n')).toEqual({ rest: '', frame: { file: '/a/pit2.png', generation: 3 } })
+    expect(readFrames('', 'noise\n').frame).toBeUndefined()
+  })
+
+  it('fits the pane exactly, with pixels of a similar size on any screen', () => {
+    expect(pitSize(46, 44, '7x18')).toEqual({ width: 322, height: 792, scale: 2 })
+    expect(pitSize(46, 44, '15x36')).toEqual({ width: 690, height: 1584, scale: 4 })
+    expect(pitSize(46, 44, '')).toEqual({ width: 368, height: 704, scale: 2 })
   })
 })
 

@@ -1,9 +1,9 @@
 import { atom, read, update } from 'claude-code'
-import type { Register } from 'claude-code'
+import type { EngineInterface, Register } from 'claude-code'
 
 import type { Journey, TaskList, TransferRow } from '../types'
 import { draw, drawRule, makeScene, toCells, type Scene } from './inferno'
-import { danteTool, declaredSteps, downloadOf, isDub, outputText, parseTransfers, STEP_OF, targetOf, taskChange, titleOf } from './parse'
+import { danteTool, declaredSteps, downloadOf, isDub, outputText, parseTransfers, pitSize, readFrames, STEP_OF, targetOf, taskChange, titleOf } from './parse'
 import { advance, isSettled, progressOf, type Motion, type Progress } from './progress'
 import { STEPS, words, type Lang } from './words'
 
@@ -90,6 +90,60 @@ This session runs inside Dante: Claude Code set up as a media concierge, opened 
 
 type Header = { version: string; model: string; cwd: string }
 
+// Where the terminal shows pictures, the circles are drawn at full resolution by a helper process
+// (src/pit/daemon.ts): it writes each frame to a file and the terminal reads the file, so no pixel
+// crosses the chat. Elsewhere, or if the helper does not start, block characters draw them.
+type Frame = { file: string; format: 'png'; generation: number }
+type Helper = {
+  dir: string
+  columns: number
+  rows: number
+  said: string
+  frame: Frame | undefined
+  refused: number
+  /** The pane is up and still the picture is not taken: this terminal does not show it. */
+  isUseless: boolean
+  isOver: boolean
+}
+const REFUSED_MOST = 40
+
+async function runHelper($: EngineInterface, helper: Helper, node: string, cell: string | undefined, first: string): Promise<void> {
+  const { width, height, scale } = pitSize(helper.columns, helper.rows, cell)
+  let pending = ''
+  try {
+    await $.fs.write(`${helper.dir}/state.json`, first)
+    const stream = $.process.spawn({
+      argv: [node, `${$.plugin.root}/../dist/pit/daemon.js`, `${helper.dir}/state.json`, `${helper.dir}/frames`, String(width), String(height), String(scale)],
+    })
+    for await (const piece of stream) {
+      // Leaving the loop ends the process.
+      if (helper.isOver) break
+      if (piece.stream !== 'stdout') continue
+      const heard = readFrames(pending, piece.text)
+      pending = heard.rest
+      if (heard.frame === undefined) continue
+      const isFirst = helper.frame === undefined
+      const frame: Frame = { ...heard.frame, format: 'png' }
+      helper.frame = frame
+      if (isFirst) {
+        // From blocks to the picture.
+        $.ui.invalidate('ui.render')
+        continue
+      }
+      const painted = await $.ui.blit({ requestId: 'inferno', key: 'pit', source: frame })
+      helper.refused = painted.deny === undefined ? 0 : helper.refused + 1
+      if (helper.refused > REFUSED_MOST) {
+        helper.isUseless = (await $.ui.panes()).some(pane => pane.id === 'inferno' && pane.isPlaced)
+        break
+      }
+    }
+  } catch {
+    // No node, no file, no terminal: the blocks stay.
+  }
+  helper.isOver = true
+  $.ui.invalidate('ui.render')
+}
+
 export const register: Register = on => {
   let header: Header | null = null
   let lang: Lang = 'en'
@@ -116,6 +170,52 @@ export const register: Register = on => {
   let ruleColumns = 0
   let isRuleHot = false
   let beatTimer: { cancel: () => void } | undefined
+  // The helper that draws pictures, when the terminal shows them.
+  let isPicture = false
+  let cell: string | undefined
+  let node = 'node'
+  let helperHome: string | undefined
+  let helper: Helper | undefined
+  let helpers = 0
+  // The size the pane wants pictures at, and since which beat.
+  let wanted: { columns: number; rows: number; since: number } | undefined
+
+  const helperState = (): string => {
+    const to = target()
+    return JSON.stringify({ depth: to.depth, mood: to.mood, isDone: to.isDone, pace: animation })
+  }
+
+  // What the helper needs this beat: to start, to be told something, or to stop.
+  const tend = (): { start?: Helper; tell?: { file: string; text: string } } => {
+    if (helper?.isOver === true) {
+      // One that never drew anything will not: stay with the blocks.
+      if (helper.frame === undefined || helper.isUseless) isPicture = false
+      else if (helper.refused > REFUSED_MOST) wanted = undefined
+      helper = undefined
+    }
+    if (!isPicture || wanted === undefined || helperHome === undefined) {
+      if (helper !== undefined) helper.isOver = true
+      return {}
+    }
+    if (helper === undefined) {
+      helpers += 1
+      helper = { dir: `${helperHome}/pit/${helpers}-${Math.random().toString(36).slice(2, 8)}`, columns: wanted.columns, rows: wanted.rows, said: helperState(), frame: undefined, refused: 0, isUseless: false, isOver: false }
+      return { start: helper }
+    }
+    const isResized = helper.columns !== wanted.columns || helper.rows !== wanted.rows
+    if (isResized) {
+      // Once the pane has held its new size for half a second.
+      if (beats - wanted.since > 5) {
+        helper.isOver = true
+        return { tell: { file: `${helper.dir}/state.json`, text: '{"stop":true}' } }
+      }
+      return {}
+    }
+    const say = helperState()
+    if (say === helper.said) return {}
+    helper.said = say
+    return { tell: { file: `${helper.dir}/state.json`, text: say } }
+  }
 
   const tally = () => {
     const all = Object.values(tasksNow.all)
@@ -140,10 +240,10 @@ export const register: Register = on => {
     seconds += BEAT_MS / 1000
     restless = isBusy ? 0 : restless + BEAT_MS / 1000
     motion = advance(motion, to, BEAT_MS / 1000)
-    const pace = isBusy ? (animation === 'calm' ? 2 : 1) : animation === 'calm' || restless > REST_AFTER_S ? 0 : 3
+    const pace = animation === 'off' ? 0 : isBusy ? (animation === 'calm' ? 2 : 1) : animation === 'calm' || restless > REST_AFTER_S ? 0 : 3
     const isDue = pace !== 0 && beats % pace === 0
     // The rule burns while Dante works, and one last cold repaint puts it out.
-    const isRuleDue = ruleColumns > 0 && (isWorking ? isDue : isRuleHot)
+    const isRuleDue = ruleColumns > 0 && animation !== 'off' && (isWorking ? isDue : isRuleHot)
     isRuleHot = isWorking
     return {
       ...(isPitUp && isDue ? { pit: pitCells() } : {}),
@@ -165,6 +265,9 @@ export const register: Register = on => {
     isPinned = (await $.env.get('DANTE_PINNED_HEADER')) === '1'
     const moves = await $.env.get('DANTE_ANIMATION')
     animation = moves === 'off' || moves === 'calm' ? moves : 'full'
+    isPicture = (await $.env.get('DANTE_GRAPHICS')) === 'image'
+    cell = await $.env.get('DANTE_CELL')
+    node = (await $.env.get('DANTE_NODE')) || 'node'
 
     if (!e.isInteractive) return result
 
@@ -178,10 +281,14 @@ export const register: Register = on => {
     if ((await $.store.get('pane')) !== 'closed') {
       void $.ui.open({ id: PANE_ID, title: 'Inferno', columns: PANE_COLUMNS }).catch(() => undefined)
     }
+    if (isPicture) helperHome = await $.process.hookEnv().then(env => env.CLAUDE_PLUGIN_DATA, () => undefined)
     beatTimer?.cancel()
-    if (animation !== 'off') {
+    if (animation !== 'off' || isPicture) {
       beatTimer = $.clock.every(BEAT_MS, () => {
         const due = beat()
+        const { start, tell } = tend()
+        if (start !== undefined) void runHelper($, start, node, cell, start.said)
+        if (tell !== undefined) void $.fs.write(tell.file, tell.text).catch(() => undefined)
         if (due.pit !== undefined) {
           void $.ui
             .blit({ requestId: PANE_ID, key: 'pit', cells: due.pit })
@@ -233,6 +340,7 @@ export const register: Register = on => {
       await $.ui.close({ id: PANE_ID })
       await $.store.set('pane', 'closed')
       isPitUp = false
+      wanted = undefined
       return { text: words(lang).paneClosed }
     }
     await $.store.set('pane', 'open')
@@ -243,6 +351,7 @@ export const register: Register = on => {
   // Closed with its own mark: it stays closed next time too.
   on('ui.close', { id: 'inferno' }, async ($, e, next) => {
     isPitUp = false
+    wanted = undefined
     if (e.origin.kind === 'person') await $.store.set('pane', 'closed')
     return next(e)
   })
@@ -399,7 +508,7 @@ export const register: Register = on => {
     await read($, transfersAtom)
     await read($, tickAtom)
     const now = await $.clock.now()
-    const { Box, Raster, Text } = $.ui.resolve(e)
+    const { Box, Image, Raster, Text } = $.ui.resolve(e)
     const w = words(lang)
     const to = target()
 
@@ -408,7 +517,10 @@ export const register: Register = on => {
     const fits = columns >= 24 && rows >= 22
     if (!fits) pit = undefined
     else if (pit === undefined || pit.w !== columns || pit.h !== rows * 2) pit = makeScene(columns, rows * 2)
-    const cells = pitCells()
+    if (!fits) wanted = undefined
+    else if (wanted === undefined || wanted.columns !== columns || wanted.rows !== rows) wanted = { columns, rows, since: beats }
+    const picture = isPicture && fits && helper?.columns === columns && helper.rows === rows ? helper.frame : undefined
+    const cells = picture === undefined ? pitCells() : undefined
     isPitUp = cells !== undefined
     if (animation === 'off') motion = { depth: to.depth, stars: to.isDone ? 1 : 0 }
 
@@ -428,6 +540,7 @@ export const register: Register = on => {
         : ''
     return (
       <Box flexDirection="column">
+        {picture === undefined ? null : <Image key="pit" source={picture} columns={columns} rows={rows} alt="Inferno" />}
         {cells === undefined ? null : <Raster key="pit" columns={columns} rows={rows} cells={cells} />}
         <Box marginTop={1} flexDirection="column">
           {isIdle ? (

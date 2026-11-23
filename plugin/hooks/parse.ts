@@ -136,3 +136,22 @@ export function taskChange(tool: string, input: unknown, result: unknown): { id:
   }
   return undefined
 }
+
+/** A frame the pit's helper announces: `pit <absolute path> <number>`. Keeps what is not a whole line yet. */
+export function readFrames(pending: string, text: string): { rest: string; frame: { file: string; generation: number } | undefined } {
+  const lines = (pending + text).split('\n')
+  const rest = lines.pop() ?? ''
+  let frame: { file: string; generation: number } | undefined
+  for (const line of lines) {
+    const m = /^pit (\/.+\.png) (\d+)$/.exec(line)
+    if (m !== null) frame = { file: m[1]!, generation: Number(m[2]) }
+  }
+  return { rest, frame }
+}
+
+/** How big to draw the pit for a pane of that many cells, and how many screen pixels one of its own takes. */
+export function pitSize(columns: number, rows: number, cell: string | undefined): { width: number; height: number; scale: number } {
+  const m = /^(\d+)x(\d+)$/.exec(cell ?? '')
+  const [w, h] = m === null ? [8, 16] : [Number(m[1]), Number(m[2])]
+  return { width: columns * w, height: rows * h, scale: Math.max(1, Math.round(w / 3.5)) }
+}
