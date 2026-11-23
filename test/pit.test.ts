@@ -4,10 +4,12 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { inflateSync } from 'node:zlib'
 import { describe, expect, it } from 'vitest'
-import { PLTE } from '../src/pit/palette.js'
+import { PLTE, SPOT } from '../src/pit/palette.js'
 import { encodePng } from '../src/pit/png.js'
 import { Pit, type Goal } from '../src/pit/scene.js'
-import { capitals, CENTAUR, CERBERUS, DANTE, FERRYMAN, GERYON, HEAD, MINOS, SKULL, SOUL, VIRGIL, wrap } from '../src/pit/sprites.js'
+import * as sprites from '../src/pit/sprites.js'
+
+const { capitals, textWidth, wrap } = sprites
 import { drawsPictures } from '../src/launch.js'
 
 const goal = (depth: number, mood: Goal['mood'] = 'running', isDone = false): Goal => ({ depth, mood, isDone })
@@ -31,7 +33,7 @@ describe('the high-resolution pit', () => {
     const pit = new Pit(161, 396)
     pit.frame(goal(3), 0.1)
     expect(pit.isSettled(goal(3))).toBe(false)
-    run(pit, goal(3), 30)
+    run(pit, goal(3), 90)
     expect(pit.isSettled(goal(3))).toBe(true)
     expect(pit.isSettled(goal(5))).toBe(false)
   })
@@ -40,37 +42,59 @@ describe('the high-resolution pit', () => {
     const pit = new Pit(161, 396)
     run(pit, goal(8, 'done', true), 1)
     expect(pit.stars).toBe(0)
-    run(pit, goal(8, 'done', true), 60)
+    run(pit, goal(8, 'done', true), 200)
     expect(pit.stars).toBe(1)
-    run(pit, goal(0), 12)
+    run(pit, goal(0), 30)
     expect(pit.stars).toBe(0)
     expect(pit.isSettled(goal(0))).toBe(true)
   })
 
   it('stops part way down a stair for a download that is part way', () => {
     const pit = new Pit(161, 396)
-    run(pit, goal(6.4), 40)
+    run(pit, goal(6.4), 160)
     expect(pit.isSettled(goal(6.4))).toBe(true)
     expect(pit.isSettled(goal(7))).toBe(false)
   })
 
+  it('fills the river with the download, and lights a cloud for each cached release', () => {
+    const count = (percent: number, cached: number): [number, number] => {
+      const pit = new Pit(161, 396)
+      pit.labels = { circles: [], title: '', ask: '', facts: [], lit: [], now: -1, percent, checked: 4, cached }
+      const px = pit.frame(goal(-1, 'idle'), 0)
+      return [px.filter(c => c === SPOT.greenDark).length, px.filter(c => c === SPOT.led).length]
+    }
+    const [empty] = count(0, 0)
+    const [half] = count(50, 0)
+    const [full] = count(100, 0)
+    expect(empty).toBeLessThan(half)
+    expect(half).toBeLessThan(full)
+    expect(count(0, 0)[1]).toBeLessThan(count(0, 2)[1])
+  })
+
   it('has sprites with rows of one width', () => {
-    for (const art of [...DANTE, ...VIRGIL, SOUL, HEAD, SKULL, FERRYMAN, MINOS, ...CERBERUS, ...CENTAUR, ...GERYON]) expect(new Set(art.map(row => row.length)).size).toBe(1)
+    const isSprite = (value: unknown): value is readonly string[] => Array.isArray(value) && value.every(row => typeof row === 'string')
+    const all = Object.values(sprites).flatMap(value => (isSprite(value) ? [value] : Array.isArray(value) ? value.filter(isSprite) : []))
+    expect(all.length).toBeGreaterThan(20)
+    for (const one of all) expect(new Set(one.map(row => row.length)).size).toBe(1)
   })
 })
 
 describe('what is cut in the rock', () => {
   it('has only letters the alphabet can draw, on lines that fit', () => {
     expect(capitals('La caída: ¿qué? №1')).toBe('LA CAIDA: QUE? 1')
-    expect(wrap('LA NOCHE DE LOS MUERTOS VIVIENTES', 22, 2)).toEqual(['LA NOCHE DE LOS', 'MUERTOS VIVIENTES'])
-    expect(wrap('ONE TWO THREE FOUR FIVE SIX', 9, 2)).toEqual(['ONE TWO', 'THREE..'])
-    expect(wrap('SUPERCALIFRAGILISTIC', 8, 2)).toEqual(['SUPERCAL'])
+    expect(wrap('LA NOCHE DE LOS MUERTOS VIVIENTES', 82, 2)).toEqual(['LA NOCHE DE LOS', 'MUERTOS VIVIENTES'])
+    for (const text of ['ONE TWO THREE FOUR FIVE SIX', 'SUPERCALIFRAGILISTIC', 'MMMMMMMM NNNNNNN', 'A']) {
+      for (const line of wrap(text, 34, 2)) expect(textWidth(line)).toBeLessThanOrEqual(34)
+    }
+    expect(wrap('SUPERCALIFRAGILISTIC', 34, 2)).toHaveLength(1)
+    expect(wrap('SUPERCALIFRAGILISTIC', 34, 2)[0]).toMatch(/^SUPER.*\.\.$/)
+    expect(wrap('ONE TWO THREE', 200, 2)).toEqual(['ONE TWO THREE'])
   })
 
   it('changes with the request, and no label at all is fine too', () => {
     const pit = new Pit(161, 396)
     const plain = pit.frame(goal(-1, 'idle'), 0).slice()
-    pit.labels = { circles: ['Limbo'], title: 'Example', facts: ['1968'], lit: [true], now: 1 }
+    pit.labels = { circles: ['Limbo'], title: 'Example', ask: '', facts: ['1968'], lit: [true], now: 1 }
     expect(pit.frame(goal(-1, 'idle'), 0)).not.toEqual(plain)
   })
 })
@@ -82,7 +106,7 @@ describe('before the gate', () => {
     expect(pit.isSettled(goal(-1, 'idle'))).toBe(true)
     run(pit, goal(0), 2)
     expect(pit.isSettled(goal(0))).toBe(false)
-    run(pit, goal(0), 10)
+    run(pit, goal(0), 30)
     expect(pit.isSettled(goal(0))).toBe(true)
   })
 })

@@ -56,9 +56,9 @@ const toward = (from: number, to: number, most: number): number => from + Math.m
 export function advance(now: Motion, to: Progress, seconds: number): Motion {
   // A new request while the stars are out starts from the top, behind the dissolve.
   const isBack = !to.isDone && now.stars > 0
-  const depth = isBack ? to.depth : toward(now.depth, to.depth, (to.depth < now.depth ? 6 : 1.3) * seconds)
+  const depth = isBack ? to.depth : toward(now.depth, to.depth, (to.depth < now.depth ? 6 : 0.55) * seconds)
   const isThere = Math.abs(depth - to.depth) < 0.01
-  return { depth, stars: toward(now.stars, to.isDone && isThere ? 1 : 0, seconds / (to.isDone ? 1.6 : 0.8)) }
+  return { depth, stars: toward(now.stars, to.isDone && isThere ? 1 : 0, seconds / (to.isDone ? 2.4 : 0.8)) }
 }
 
 /** Whether anything is still gliding, so a still picture can stop repainting. */

@@ -46,7 +46,7 @@ describe('progress down the circles', () => {
     expect(now.depth).toBeGreaterThan(6)
     expect(now.depth).toBeLessThan(6.5)
     expect(now.stars).toBe(0)
-    for (let i = 0; i < 60; i++) now = advance(now, end, 0.1)
+    for (let i = 0; i < 90; i++) now = advance(now, end, 0.1)
     expect(now).toEqual({ depth: 8, stars: 1 })
     expect(isSettled(now, end)).toBe(true)
     // The next request starts again from the top.
@@ -171,7 +171,7 @@ describe('pictures from the helper', () => {
 describe('words', () => {
   it('names the nine circles in both languages', () => {
     for (const lang of ['en', 'es'] as const) expect(words(lang).circles).toHaveLength(CIRCLES)
-    expect(words('es').circle(4)).toBe('Círculo V · Ira')
-    expect(words('en').circle(8)).toBe('Circle IX · Treachery')
+    expect(words('es').circle(4)).toBe('Círculo V · Caché')
+    expect(words('en').circle(8)).toBe('Circle IX · Player')
   })
 })

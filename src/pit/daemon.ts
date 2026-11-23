@@ -94,7 +94,7 @@ function tick(): void {
   if (state.pace === 'off') {
     // No movement: one picture of where things stand, each time that changes.
     if (changed) {
-      for (let n = 0; n < 400 && !pit.isSettled(state); n++) pit.frame(state, 0.1)
+      for (let n = 0; n < 2400 && !pit.isSettled(state); n++) pit.frame(state, 0.1)
       emit(0.1)
     }
     changed = false

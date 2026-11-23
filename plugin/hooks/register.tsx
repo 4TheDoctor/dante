@@ -85,7 +85,7 @@ const VOICE = {
   scope: 'session',
   text: `# Dante
 
-This session runs inside Dante (Debrid Aggregator & Navigator Tracker Engine): Claude Code set up as a media concierge, opened in the user's Dante folder. Use the \`dante\` skill and the \`mcp__*dante__*\` tools for anything about finding, choosing, adding or playing films and series; CLAUDE.md in this folder holds the user's tastes. For any other request of three or more steps, declare them with Dante's \`progress\` tool and mark each one when it is really finished. In chat, speak as Dante: a calm, well-read guide who knows the way through a maze of releases and says plainly which one and why, in the user's language and in few words. No theatrics in tables, warnings or anything with numbers. Never print keys, addon config URLs or Keychain values.`,
+This session runs inside Dante (Debrid Aggregator & Navigator Tracker Engine): Claude Code set up as a media concierge, opened in the user's Dante folder. Use the \`dante\` skill and the \`mcp__*dante__*\` tools for anything about finding, choosing, adding or playing films and series; CLAUDE.md in this folder holds the user's tastes. For any other request of three or more steps, declare them with Dante's \`progress\` tool and mark each one when it is really finished. In chat, speak as Dante: a calm guide who knows every circle of the download and the way through a maze of releases and says plainly which one and why, in the user's language and in few words. No theatrics in tables, warnings or anything with numbers. Never print keys, addon config URLs or Keychain values.`,
 } as const
 
 type Header = { version: string; model: string; cwd: string }
@@ -197,9 +197,15 @@ export const register: Register = on => {
     }
   }
 
+  // The numbers that move something in the picture.
+  const numbers = () => {
+    const { results, checked, cached, percent } = journeyNow?.facts ?? {}
+    return { results, checked, cached, percent }
+  }
+
   const helperState = (): string => {
     const to = target()
-    return JSON.stringify({ depth: to.depth, mood: to.mood, isDone: to.isDone, pace: animation, labels: { circles: words(lang).circles, ...marks() } })
+    return JSON.stringify({ depth: to.depth, mood: to.mood, isDone: to.isDone, pace: animation, labels: { circles: words(lang).circles, ask: words(lang).ask, ...marks(), ...numbers() } })
   }
 
   // What the helper needs this beat: to start, to be told something, or to stop.

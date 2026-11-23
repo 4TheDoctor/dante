@@ -13,10 +13,12 @@ const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX'] as const
 
 type Words = {
   steps: Record<StepId, string>
-  /** The nine circles, top to bottom. */
+  /** The nine circles of the download, top to bottom. */
   circles: readonly string[]
   circle: (depth: number) => string
   gate: string
+  /** The marquee, with nothing asked. */
+  ask: string
   stars: string
   verseStart: string
   verseEnd: string
@@ -35,12 +37,13 @@ type Words = {
 
 const en: Words = {
   steps: { title: 'Title', search: 'Search', cache: 'Cache', add: 'Add', play: 'Play' },
-  circles: ['Limbo', 'Lust', 'Gluttony', 'Greed', 'Wrath', 'Heresy', 'Violence', 'Fraud', 'Treachery'],
+  circles: ['Catalogue', 'Indexers', 'Trackers', 'Seeders', 'Cache', 'Firewall', 'Debrid', 'Links', 'Player'],
   circle: depth => `Circle ${ROMAN[depth] ?? ''} · ${en.circles[depth] ?? ''}`,
   gate: 'Before the gate',
-  stars: 'The stars',
-  verseStart: 'Nel mezzo del cammin di nostra vita',
-  verseEnd: 'E quindi uscimmo a riveder le stelle',
+  ask: "What's on tonight?",
+  stars: 'Under the stars',
+  verseStart: 'Midway upon the journey of your watchlist',
+  verseEnd: 'And thence we came forth to see the film',
   tasks: (done, total) => `${done} of ${total} steps`,
   found: (f, title) => [
     [title, f.year].filter(Boolean).join(', '),
@@ -49,7 +52,7 @@ const en: Words = {
     f.percent === undefined ? (f.where ?? '') : `${f.percent >= 100 ? 'ready' : `${f.percent}%`}${f.where === undefined ? '' : ` on ${f.where}`}`,
     f.player ?? '',
   ],
-  paneHelp: 'Show or hide the circles of Hell beside the chat',
+  paneHelp: 'Show or hide the circles beside the chat',
   paneOpened: 'The circles are beside the chat. /inferno hides them.',
   paneClosed: 'The circles are hidden. /inferno brings them back.',
   verbs: {
@@ -67,14 +70,14 @@ const en: Words = {
   },
   working: [
     'Descending',
-    'Crossing the Acheron',
-    'Asking Virgil the way',
-    'Reading the inscription over the gate',
-    'Counting the circles',
-    'Walking past Minos',
-    'Searching the dark wood',
-    'Weighing every release',
-    'Following the starlight',
+    'Crossing the torrent',
+    'Asking every tracker',
+    'Counting seeders',
+    'Dredging the cache',
+    'Passing the firewall',
+    'Waking the debrid',
+    'Pulling the cable',
+    'Rewinding the tape',
   ],
   served: ['Served', 'Found', 'Unveiled', 'Delivered'],
   in: 'in',
@@ -83,12 +86,13 @@ const en: Words = {
 
 const es: Words = {
   steps: { title: 'Título', search: 'Búsqueda', cache: 'Caché', add: 'Añadir', play: 'Reproducir' },
-  circles: ['Limbo', 'Lujuria', 'Gula', 'Avaricia', 'Ira', 'Herejía', 'Violencia', 'Fraude', 'Traición'],
+  circles: ['Catálogo', 'Indexadores', 'Trackers', 'Semillas', 'Caché', 'Cortafuegos', 'Debrid', 'Enlaces', 'Reproductor'],
   circle: depth => `Círculo ${ROMAN[depth] ?? ''} · ${es.circles[depth] ?? ''}`,
   gate: 'Ante la puerta',
-  stars: 'Las estrellas',
-  verseStart: 'Nel mezzo del cammin di nostra vita',
-  verseEnd: 'E quindi uscimmo a riveder le stelle',
+  ask: '¿Qué vemos hoy?',
+  stars: 'Bajo las estrellas',
+  verseStart: 'En mitad del camino de tu lista',
+  verseEnd: 'Y de allí salimos a ver la película',
   tasks: (done, total) => `${done} de ${total} pasos`,
   found: (f, title) => [
     [title, f.year].filter(Boolean).join(', '),
@@ -97,7 +101,7 @@ const es: Words = {
     f.percent === undefined ? (f.where ?? '') : `${f.percent >= 100 ? 'listo' : `${f.percent} %`}${f.where === undefined ? '' : ` en ${f.where}`}`,
     f.player ?? '',
   ],
-  paneHelp: 'Muestra u oculta los círculos del Infierno al lado del chat',
+  paneHelp: 'Muestra u oculta los círculos al lado del chat',
   paneOpened: 'Los círculos están al lado del chat. /inferno los oculta.',
   paneClosed: 'Los círculos están ocultos. /inferno los vuelve a mostrar.',
   verbs: {
@@ -115,14 +119,14 @@ const es: Words = {
   },
   working: [
     'Descendiendo',
-    'Cruzando el Aqueronte',
-    'Preguntando a Virgilio el camino',
-    'Leyendo la inscripción de la puerta',
-    'Contando los círculos',
-    'Pasando ante Minos',
-    'Buscando en la selva oscura',
-    'Pesando cada versión',
-    'Siguiendo la luz de las estrellas',
+    'Cruzando el torrente',
+    'Preguntando a los trackers',
+    'Contando semillas',
+    'Dragando la caché',
+    'Pasando el cortafuegos',
+    'Despertando al debrid',
+    'Tirando del cable',
+    'Rebobinando la cinta',
   ],
   served: ['Servido', 'Hallado', 'Desvelado', 'Entregado'],
   in: 'en',
