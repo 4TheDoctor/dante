@@ -23,6 +23,10 @@ type Words = {
   found: (facts: Facts, title: string) => string[]
   paneHelp: string
   paneOpened: string
+  hint: string
+  rehearsal: (at: number, of: number) => string
+  rehearsing: string
+  rehearsed: string
   paneClosed: string
   verbs: Record<string, string>
   working: readonly string[]
@@ -47,6 +51,10 @@ const en: Words = {
   ],
   paneHelp: 'Show or hide the circles beside the chat',
   paneOpened: 'The circles are beside the chat. /inferno hides them.',
+  hint: 'demo | 1-9 | stop',
+  rehearsal: (at, of) => `Rehearsal ${at}/${of}, made-up data`,
+  rehearsing: 'A rehearsal with made-up data; nothing is searched or added. /inferno 1 to 9 goes to a circle, /inferno demo runs them all, /inferno stop ends it.',
+  rehearsed: 'The rehearsal is over.',
   paneClosed: 'The circles are hidden. /inferno brings them back.',
   verbs: {
     find_title: 'Title',
@@ -93,6 +101,10 @@ const es: Words = {
   ],
   paneHelp: 'Muestra u oculta los círculos al lado del chat',
   paneOpened: 'Los círculos están al lado del chat. /inferno los oculta.',
+  hint: 'demo | 1-9 | stop',
+  rehearsal: (at, of) => `Ensayo ${at}/${of}, datos inventados`,
+  rehearsing: 'Es un ensayo con datos inventados: no busca ni añade nada. /inferno 1 a 9 va a un círculo, /inferno demo los recorre todos, /inferno stop lo termina.',
+  rehearsed: 'El ensayo terminó.',
   paneClosed: 'Los círculos están ocultos. /inferno los vuelve a mostrar.',
   verbs: {
     find_title: 'Título',

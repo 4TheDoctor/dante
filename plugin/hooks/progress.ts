@@ -1,6 +1,6 @@
 // How far down the pit the current request is. Pure. Every step down stands for something that
 // really happened; nothing moves on a timer alone except the glide between two circles.
-import type { Journey, TaskTally } from '../types'
+import type { Facts, Journey, TaskTally } from '../types'
 import { CIRCLES, type Mood } from './inferno'
 import { STEPS } from './words'
 
@@ -64,3 +64,41 @@ export function advance(now: Motion, to: Progress, seconds: number): Motion {
 /** Whether anything is still gliding, so a still picture can stop repainting. */
 export const isSettled = (now: Motion, to: Progress): boolean =>
   Math.abs(now.depth - to.depth) < 0.01 && now.stars === (to.isDone ? 1 : 0)
+
+/** One stop of the rehearsal: a made-up request, to see each circle asleep, at work and done. */
+export interface Scene {
+  depth: number
+  seconds: number
+  /** Steps done, and the one under way (-1: none). */
+  did: number
+  now: number
+  facts: Facts
+  isDone?: boolean
+  /** The download runs from 0 to 100 during this stop. */
+  isDownload?: boolean
+}
+
+const FOUND: Facts = { year: 1968, results: 143 }
+const CHECKED: Facts = { ...FOUND, checked: 3, cached: 2, where: 'AllDebrid' }
+export const REHEARSAL: readonly Scene[] = [
+  { depth: -1, seconds: 4, did: 0, now: -1, facts: {} },
+  { depth: 0, seconds: 21, did: 0, now: 0, facts: {} },
+  { depth: 1, seconds: 19, did: 1, now: -1, facts: { year: 1968 } },
+  { depth: 2, seconds: 18, did: 1, now: 1, facts: { year: 1968 } },
+  { depth: 3, seconds: 17, did: 2, now: -1, facts: FOUND },
+  { depth: 4, seconds: 16, did: 2, now: 2, facts: FOUND },
+  { depth: 5, seconds: 15, did: 3, now: -1, facts: CHECKED },
+  { depth: 6, seconds: 20, did: 3, now: 3, facts: CHECKED, isDownload: true },
+  { depth: 7, seconds: 13, did: 4, now: -1, facts: { ...CHECKED, percent: 100 } },
+  { depth: 8, seconds: 14, did: 4, now: 4, facts: { ...CHECKED, percent: 100 } },
+  { depth: 8, seconds: 18, did: 5, now: -1, facts: { ...CHECKED, percent: 100, player: 'mpv' }, isDone: true },
+]
+
+/** The stop a circle (1 to 9) is seen at work in. */
+export const stopOf = (circle: number): number => REHEARSAL.findIndex(scene => scene.depth === circle - 1)
+
+/** A stop's numbers after that many seconds in it: only the download moves. */
+export function factsAt(scene: Scene, elapsed: number): Facts {
+  if (scene.isDownload !== true) return scene.facts
+  return { ...scene.facts, percent: Math.min(100, Math.round((Math.max(0, elapsed - 6) / (scene.seconds - 8)) * 100)) }
+}

@@ -49,6 +49,20 @@ describe('the high-resolution pit', () => {
     expect(pit.isSettled(goal(0))).toBe(true)
   })
 
+  it('can be put on any circle at once, and only then are its icon and the ones above awake', () => {
+    const pit = new Pit(161, 396)
+    for (const depth of [-1, 0, 3, 6.5, 8]) {
+      pit.place(depth)
+      expect(pit.isSettled(goal(depth))).toBe(true)
+    }
+    const led = (depth: number): number => {
+      pit.place(depth)
+      return pit.frame(goal(depth), 0).filter(c => c === SPOT.led).length
+    }
+    // The radar of the third circle has lit blips only from there on.
+    expect(led(4)).toBeGreaterThan(led(1) + 5)
+  })
+
   it('stops part way down a stair for a download that is part way', () => {
     const pit = new Pit(161, 396)
     run(pit, goal(6.4), 160)
@@ -60,7 +74,8 @@ describe('the high-resolution pit', () => {
     const count = (percent: number, cached: number): [number, number] => {
       const pit = new Pit(161, 396)
       pit.labels = { circles: [], title: '', facts: [], lit: [], now: -1, percent, checked: 4, cached }
-      const px = pit.frame(goal(-1, 'idle'), 0)
+      pit.place(8)
+      const px = pit.frame(goal(8), 0)
       return [px.filter(c => c === SPOT.greenDark).length, px.filter(c => c === SPOT.star).length]
     }
     const [empty] = count(0, 0)

@@ -3,7 +3,7 @@
 // torrent, walk the ledges and climb down as the request really advances, and come out to a film
 // under the stars when it is done. Pixels are palette indexes (palette.ts).
 import { FLAME, LEVELS, RAMP, SPOT, type RampName } from './palette.js'
-import { capitals, CAR, CRATE, DANTE, DOWN, FERRYMAN, FILE, FOSSILS, MAGNET, POPCORN, REEL, stamp, textWidth, TOMB, UP, VIRGIL, wrap, write, writeBig, type Canvas } from './sprites.js'
+import { capitals, CAR, CRATE, DANTE, DOWN, FERRYMAN, FILE, FOSSILS, POPCORN, REEL, stamp, textWidth, UP, VIRGIL, wrap, write, writeBig, type Canvas } from './sprites.js'
 
 export type Mood = 'idle' | 'running' | 'done' | 'failed'
 
@@ -36,7 +36,7 @@ export interface Goal {
 
 export const CIRCLES = 9
 const LAST = CIRCLES - 1
-const NAME = ['DEBRID AGGREGATOR', '& NAVIGATOR', 'TRACKER ENGINE'] as const
+const NAME = ['DEBRID AGGREGATOR', 'NAVIGATOR', 'TRACKER ENGINE'] as const
 /** How fast the world around them moves. */
 const CALM = 0.55
 /** Seconds between two steps of the fire. */
@@ -387,6 +387,11 @@ export class Pit {
     return i % 2 === 0 ? 0.84 : 0.16
   }
 
+  /** The stretch of a ledge where they wait. */
+  private waiting(i: number): [number, number] {
+    return i % 2 === 0 ? [0.1, 0.24] : [0.76, 0.9]
+  }
+
   /** Where the boat lands: the head of the stair down to the first circle. */
   private landing(): { x: number; y: number } {
     return { x: this.onLedge(0, 0.16).x + 2, y: this.top - 2 }
@@ -468,8 +473,10 @@ export class Pit {
         this.walked += 12 * dt
       }
     } else if (goal.mood === 'running' && this.climb === 0) {
-      if (this.along > 0.74) this.heading = -1
-      if (this.along < 0.26) this.heading = 1
+      // On the side they came in by, so as not to stand before what there is to see.
+      const [from, to] = this.waiting(this.ring)
+      if (this.along > to) this.heading = -1
+      if (this.along < from) this.heading = 1
       this.along += this.heading * pace * 0.55
       this.walked += 8 * dt
     }
@@ -590,6 +597,23 @@ export class Pit {
     }
   }
 
+  /** Put them somewhere at once, without the walk. */
+  place(depth: number): void {
+    this.ring = depth < 0 ? -1 : Math.min(LAST, Math.floor(depth))
+    this.climb = this.ring < 0 || this.ring === LAST ? 0 : depth - this.ring
+    const stair = this.stairAlong(Math.max(0, this.ring))
+    const [from, to] = this.waiting(Math.max(0, this.ring))
+    this.along = this.ring === LAST ? 0.33 : this.climb > 0 ? stair : (from + to) / 2
+    this.heading = this.ring % 2 === 0 ? 1 : -1
+    this.trail = []
+    if (this.climb > 0) {
+      // The way they would have come.
+      const way = stair > 0.5 ? -1 : 1
+      for (let n = 12; n >= 0; n--) this.trail.push({ ...this.onLedge(this.ring, stair + way * n * 0.02), right: way < 0 })
+    }
+    this.stars = 0
+  }
+
   /** Nothing left to walk or fade: only the fire moves. */
   isSettled(goal: Goal): boolean {
     const there = Math.abs(this.ring + this.climb - Math.max(-1, Math.min(LAST, goal.depth))) < 0.02
@@ -679,7 +703,7 @@ export class Pit {
       let x = cx - (wide >> 1)
       const y = sign + 3 + n * 9
       ;[...line].forEach((letter, k) => {
-        const isInitial = letter !== '&' && (k === 0 || line[k - 1] === ' ')
+        const isInitial = k === 0 || line[k - 1] === ' '
         const color = isInitial ? SPOT.laurelGold : FLAME[0]![4]!
         if (isBig) {
           writeBig(canvas, letter, x, y, color)
@@ -720,13 +744,16 @@ export class Pit {
     }
   }
 
-  /** Charon's boat, a magnet for a sail, over the feet of those it carries. */
+  /** Charon's boat, a lantern at its prow, over the feet of those it carries. */
   private paintBoat(canvas: Canvas): void {
     const x = this.boatX()
     const y = this.top - 4 + Math.round(Math.sin(this.t * 2.6) * 0.8)
     const isRowing = this.ring < 0 && this.climb > BOARDED && this.climb < CROSSED
-    for (let k = 0; k < 24; k++) this.dot(x - 20, y - k, SPOT.hullLight)
-    stamp(canvas, MAGNET, x - 14, y - 15)
+    for (let k = 0; k < 11; k++) this.dot(x - 22, y - 4 - k, SPOT.hullLight)
+    for (let a = -1; a <= 1; a++) for (let b = 0; b < 4; b++) this.dot(x - 25 + a, y - 13 + b, b === 0 ? SPOT.hullLight : a === 0 ? SPOT.window : SPOT.amber)
+    this.dot(x - 24, y - 15, SPOT.hullLight)
+    this.dot(x - 23, y - 15, SPOT.hullLight)
+    this.dot(x - 25, y - 14, SPOT.hullLight)
     stamp(canvas, FERRYMAN, x + 19, y - 1, false)
     const pull = isRowing ? Math.sin(this.t * 4.4) : 0.3
     for (let k = 0; k < 17; k++) this.dot(x + 14 + k * (0.45 + pull * 0.3), y - 9 + k * 0.85, SPOT.hullLight)
@@ -796,46 +823,58 @@ export class Pit {
     return y > roof && y < ring.y && Math.abs(x - this.cx) < ring.outer - 2
   }
 
-  /** One thing in each circle, big enough to know it by, and little else. */
+  /**
+   * One thing in each circle, big enough to know it by. It sleeps until they come, works while
+   * they are there, and stays done behind them.
+   */
   private paintCircle(i: number, canvas: Canvas): void {
     const { t, labels } = this
     const ring = this.rings[i]!
     const cx = Math.round(this.cx)
     const floor = (dx: number): number => this.floorAt(i, dx)
     const foot = floor(0)
+    const isHere = i === this.ring
+    const isPast = i < this.ring
+    const isAsleep = !isHere && !isPast
+    const asleep = (color: number): number => (color === SPOT.outline ? color : RAMP.stone + 3)
     switch (i) {
       case 0: {
-        // Catalogue: a strip of film, and a lens that looks for the one.
+        // Catalogue: a strip of film, and the lens that finds the one.
         const left = cx - 37
         const top = foot - 14
         for (let y = 0; y < 13; y++) {
           for (let x = 0; x < 75; x++) {
             const isHole = (y === 1 || y === 11) && x % 5 > 1 && x % 5 < 4
-            const isFrame = y > 2 && y < 10 && x % 15 > 1 && x % 15 < 14
             const n = Math.floor(x / 15)
+            const isFrame = y > 2 && y < 10 && x % 15 > 1 && x % 15 < 14
             const isGround = y > 6 + ((x + n * 3) % 5 === 0 ? 1 : 0)
-            this.dot(left + x, top + y, isHole ? SPOT.togaShade : isFrame ? (isGround ? RAMP.sea + 2 + (n % 2) : RAMP.dawn + 2 + (n % 3)) : SPOT.outline)
+            const picture = isAsleep ? RAMP.night + (isGround ? 1 : 2) : isGround ? RAMP.sea + 2 + (n % 2) : RAMP.dawn + 2 + (n % 3)
+            const isFound = isPast && n === 2
+            const isRim = isFound && y > 1 && y < 11 && (y === 2 || y === 10 || x % 15 === 1 || x % 15 === 14) && x % 15 > 0
+            this.dot(left + x, top + y, isRim ? SPOT.laurelGold : isHole ? (isAsleep ? SPOT.togaDark : SPOT.togaShade) : isFrame ? picture : SPOT.outline)
           }
         }
-        const x = cx + Math.round(Math.sin(t * 0.45) * 27)
+        const x = cx + Math.round(isAsleep ? -33 : isPast ? 0 : Math.sin(t * 0.7) * 27)
         const y = top + 6
         for (let b = -6; b <= 6; b++) {
           for (let a = -6; a <= 6; a++) {
             const r = Math.hypot(a, b)
-            if (r < 4.6 && a + b < -4) this.dot(x + a, y + b, SPOT.screen)
-            else if (r >= 4.6 && r < 6.5) this.dot(x + a, y + b, r < 5.6 ? SPOT.metalLight : SPOT.metalDark)
+            if (r < 4.6 && a + b < -4 && !isAsleep) this.dot(x + a, y + b, SPOT.screen)
+            else if (r >= 4.6 && r < 6.5) this.dot(x + a, y + b, isPast ? (r < 5.6 ? SPOT.laurelGold : RAMP.gold + 3) : r < 5.6 && !isAsleep ? SPOT.metalLight : SPOT.metalDark)
           }
         }
         for (let k = 0; k < 7; k++) for (let a = 0; a < 3; a++) this.dot(x + 5 + k + a, y + 5 + k, a === 1 ? SPOT.hullLight : SPOT.hull)
         break
       }
       case 1: {
-        // Indexers: a magnet, and the torrents it draws in.
-        for (let n = 0; n < 3; n++) {
-          const life = (t * 0.1 + n / 3) % 1
-          const side = n % 2 === 0 ? -1 : 1
-          const dx = side * (ring.outer * 0.72 * (1 - life) + 4 * life)
-          if (life < 0.9) stamp(canvas, FILE, cx + Math.round(dx), foot - 4 - Math.round(Math.sin(life * Math.PI) * 5))
+        // Indexers: a magnet. It draws the torrents in, and keeps them.
+        if (isHere) {
+          for (let n = 0; n < 3; n++) {
+            const life = (t * 0.16 + n / 3) % 1
+            const side = n % 2 === 0 ? -1 : 1
+            const dx = side * (ring.outer * 0.72 * (1 - life) + 4 * life)
+            if (life < 0.9) stamp(canvas, FILE, cx + Math.round(dx), foot - 4 - Math.round(Math.sin(life * Math.PI) * 5))
+          }
         }
         const top = foot - 18
         for (let y = 0; y < 18; y++) {
@@ -843,99 +882,132 @@ export class Pit {
             const d = y < 8 ? Math.abs(a) : Math.hypot(a, y - 8)
             if (d < 4 || d > 10) continue
             const isEdge = d < 4.9 || d > 9.1 || (y === 0 && d >= 4)
-            this.dot(cx + a, top + y, isEdge ? SPOT.outline : y < 5 ? (a < 0 ? SPOT.coif : SPOT.togaShade) : d > 8 && a < 0 ? SPOT.robeLight : a > 5 ? SPOT.robeDark : SPOT.robe)
+            const tip = isAsleep ? SPOT.metalDark : a < 0 ? SPOT.coif : SPOT.togaShade
+            const body = isAsleep ? RAMP.blood + (a > 5 ? 2 : 3) : d > 8 && a < 0 ? SPOT.robeLight : a > 5 ? SPOT.robeDark : SPOT.robe
+            this.dot(cx + a, top + y, isEdge ? SPOT.outline : y < 5 ? tip : body)
           }
         }
+        if (isPast) for (const dx of [-15, 15]) stamp(canvas, FILE, cx + dx, foot - 4)
         break
       }
       case 2: {
         // Trackers: a radar, under a thin rain of bits.
-        for (let n = 0; n < 9; n++) {
-          const life = (t * (0.16 + noise(n, 1, 72) * 0.08) + noise(n, 2, 72)) % 1
-          const u = (n / 8) * 2 - 1
-          if (Math.abs(u) < 0.3) continue
-          const x = Math.round(cx + u * ring.outer * 0.86)
-          const y = Math.round(ring.y - ring.tall + 3 + life * (ring.tall - ring.bow - 8))
-          if (this.isInRoom(i, x - 2, y) && this.isInRoom(i, x + 4, y + 5)) write(canvas, noise(n, Math.floor(life * 4), 73) < 0.5 ? '0' : '1', x, y, life < 0.15 || life > 0.85 ? SPOT.greenDark : SPOT.green)
+        if (isHere) {
+          for (let n = 0; n < 9; n++) {
+            const life = (t * (0.2 + noise(n, 1, 72) * 0.1) + noise(n, 2, 72)) % 1
+            const u = (n / 8) * 2 - 1
+            if (Math.abs(u) < 0.3) continue
+            const x = Math.round(cx + u * ring.outer * 0.86)
+            const y = Math.round(ring.y - ring.tall + 3 + life * (ring.tall - ring.bow - 8))
+            if (this.isInRoom(i, x - 2, y) && this.isInRoom(i, x + 4, y + 5)) write(canvas, noise(n, Math.floor(life * 4), 73) < 0.5 ? '0' : '1', x, y, life < 0.15 || life > 0.85 ? SPOT.greenDark : SPOT.green)
+          }
         }
         const y0 = foot - 9
-        const sweep = t * 1.1
+        const sweep = t * 1.6
+        const since = (a: number, b: number): number => (((sweep - Math.atan2(b, a)) % (Math.PI * 2)) + Math.PI * 4) % (Math.PI * 2)
         for (let b = -9; b <= 9; b++) {
           for (let a = -9; a <= 9; a++) {
             const r = Math.hypot(a, b)
             if (r > 9.4) continue
-            const behind = ((sweep - Math.atan2(b, a)) % (Math.PI * 2) + Math.PI * 4) % (Math.PI * 2)
-            const isRing = Math.abs(r - 5) < 0.5 || a === 0 || b === 0
-            const color = r > 8.2 ? SPOT.metal : behind < 0.22 ? SPOT.led : behind < 0.8 && bayer(a + 32, b + 32) > behind * 18 ? SPOT.green : isRing ? SPOT.greenDark : SPOT.outline
+            const behind = isHere ? since(a, b) : 9
+            const isLine = Math.abs(r - 5) < 0.5 || a === 0 || b === 0
+            const color = r > 8.2 ? (isAsleep ? SPOT.metalDark : SPOT.metal) : behind < 0.22 ? SPOT.led : behind < 0.8 && bayer(a + 32, b + 32) > behind * 18 ? SPOT.green : isLine ? (isAsleep ? RAMP.bog + 1 : SPOT.greenDark) : SPOT.outline
             this.dot(cx + a, y0 + b, color)
           }
         }
-        for (const [a, b] of [[4, -4], [-5, 2], [2, 6]] as const) {
-          const behind = ((sweep - Math.atan2(b, a)) % (Math.PI * 2) + Math.PI * 4) % (Math.PI * 2)
-          if (behind < 3.4) for (const [p, q] of [[0, 0], [1, 0], [0, 1], [1, 1]] as const) this.dot(cx + a + p, y0 + b + q, behind < 1.6 ? SPOT.led : SPOT.green)
+        if (!isAsleep) {
+          for (const [a, b] of [[4, -4], [-5, 2], [2, 5]] as const) {
+            const behind = isPast ? 0 : since(a, b)
+            if (behind < 3.4) for (const [p, q] of [[0, 0], [1, 0], [0, 1], [1, 1]] as const) this.dot(cx + a + p, y0 + b + q, behind < 1.6 ? SPOT.led : SPOT.green)
+          }
         }
         for (let a = -5; a <= 5; a++) this.dot(cx + a, foot, SPOT.metalDark)
         break
       }
       case 3: {
-        // Seeders: one gives, one takes, and the file between them.
-        const pull = Math.round(Math.sin(t * 0.7) * 5)
-        stamp(canvas, UP, cx - 27, floor(27) - 1)
-        stamp(canvas, CRATE, cx + pull, floor(pull) - 1)
-        stamp(canvas, DOWN, cx + 27, floor(27) - 1)
+        // Seeders: one gives, one takes, and the file between them. It ends up given.
+        const pull = isHere ? Math.round(Math.sin(t * 1.1) * 7) : isPast ? 10 : 0
+        const bob = isHere ? Math.round(Math.sin(t * 2.2)) : 0
+        stamp(canvas, UP, cx - 27, floor(27) - 1 + bob, true, isAsleep ? asleep : undefined)
+        stamp(canvas, CRATE, cx + pull, floor(pull) - 1, true, isAsleep ? asleep : undefined)
+        stamp(canvas, DOWN, cx + 27, floor(27) - 1 - bob, true, isAsleep ? asleep : undefined)
         break
       }
       case 4: {
         // Cache: a cloud with a bolt, the sign of what is there at once. Lit when something is.
-        const isLit = (labels.cached ?? 0) > 0
+        const isLit = (labels.cached ?? 0) > 0 && !isAsleep
+        const isSeeking = isHere && labels.checked === undefined && Math.sin(t * 4) > 0
         const top = foot - 20
         for (let y = 0; y < 16; y++) {
           for (let a = -17; a <= 17; a++) {
             const isIn = Math.hypot(a + 8, y - 10) < 6.4 || Math.hypot(a - 1, y - 7) < 7.6 || Math.hypot(a - 10, y - 10.5) < 5.6 || (y > 9 && y < 16 && Math.abs(a) < 13)
             if (!isIn) continue
-            this.dot(cx + a, top + y, isLit ? (y < 4 ? SPOT.star : y > 12 ? SPOT.togaShade : SPOT.coif) : y < 4 ? SPOT.metal : y > 12 ? SPOT.metalDark : RAMP.stone + 5)
+            this.dot(cx + a, top + y, isLit ? (y < 4 ? SPOT.star : y > 12 ? SPOT.togaShade : SPOT.coif) : isAsleep ? RAMP.stone + (y < 4 ? 4 : y > 12 ? 2 : 3) : y < 4 ? SPOT.metalLight : y > 12 ? SPOT.metalDark : SPOT.metal)
           }
         }
         const bolt = ['...yyyy', '..yyyy.', '.yyyy..', 'yyyyyy.', '..yyy..', '.yyy...', '.yy....', 'yy.....', 'y......']
         bolt.forEach((row, b) => {
           ;[...row].forEach((letter, a) => {
             if (letter === '.') return
-            this.dot(cx - 3 + a, top + 5 + b, isLit ? SPOT.amber : SPOT.metalDark)
-            if (row[a + 1] === '.' || row[a + 1] === undefined) this.dot(cx - 2 + a, top + 5 + b, isLit ? SPOT.amberDark : SPOT.outline)
+            this.dot(cx - 3 + a, top + 5 + b, isLit || isSeeking ? SPOT.amber : isAsleep ? RAMP.stone + 1 : SPOT.metalDark)
+            if (row[a + 1] === '.' || row[a + 1] === undefined) this.dot(cx - 2 + a, top + 5 + b, isLit || isSeeking ? SPOT.amberDark : SPOT.outline)
           })
         })
         break
       }
-      case 5:
-        // Firewall: the wall of brick, and one file that was taken down.
-        stamp(canvas, TOMB, cx, foot - 1)
+      case 5: {
+        // Firewall: a padlock on the wall of brick. Shut, then tried, then open.
+        const body = isPast ? [SPOT.green, SPOT.greenDark, SPOT.led] : isHere ? [SPOT.amber, SPOT.amberDark, SPOT.laurelGold] : [RAMP.stone + 3, RAMP.stone + 1, RAMP.stone + 5]
+        const top = foot - 19
+        const lift = isPast ? -2 : isHere ? Math.round(Math.max(0, Math.sin(t * 3)) * -1) : 0
+        for (let y = 0; y < 9; y++) {
+          for (let a = -6; a <= 6; a++) {
+            const r = y < 6 ? Math.hypot(a, y - 6) : Math.abs(a)
+            if (r < 3.4 || r > 6.2) continue
+            // Open: its right leg is out of the lock.
+            if (isPast && a > 0 && y > 5) continue
+            this.dot(cx + a, top + y + lift, r > 5.4 || r < 4 ? SPOT.metalDark : SPOT.metalLight)
+          }
+        }
+        for (let y = 0; y < 11; y++) {
+          for (let a = -8; a <= 8; a++) {
+            const isEdge = y === 0 || y === 10 || Math.abs(a) === 8
+            const isHole = (Math.hypot(a, y - 4) < 1.9 || (Math.abs(a) < 1 && y >= 4 && y < 8)) && !isEdge
+            this.dot(cx + a, top + 8 + y, isHole ? SPOT.outline : isEdge ? body[1]! : y === 1 ? body[2]! : body[0]!)
+          }
+        }
         break
+      }
       case 6: {
         // Debrid: the river is the download, and fills with it.
         const percent = labels.percent ?? 0
         const left = Math.ceil(this.cx - ring.outer + 2)
         const right = Math.floor(this.cx + ring.outer - 2)
+        const flow = isHere ? t : 0
         for (let x = left; x <= right; x++) {
           const back = Math.round(this.back(i, x - this.cx))
           const depth = Math.max(2, floor(x - this.cx) - back + 3)
           const isFull = ((x - left) / (right - left)) * 100 < percent
           for (let y = back; y < back + depth; y++) {
-            const wave = Math.sin(x * 0.4 + t * 1.6 + y) + Math.sin(x * 0.17 - t * 1.1)
-            this.dot(x, y, isFull ? (wave > 1.1 ? SPOT.led : wave > -0.3 ? SPOT.green : SPOT.greenDark) : wave > 1.1 ? SPOT.blood : RAMP.blood + (wave > -0.3 ? 3 : 2))
+            const wave = Math.sin(x * 0.4 + flow * 2.4 + y) + Math.sin(x * 0.17 - flow * 1.7)
+            this.dot(x, y, isFull ? (wave > 1.1 ? SPOT.led : wave > -0.3 ? SPOT.green : SPOT.greenDark) : wave > 1.1 && !isAsleep ? SPOT.blood : RAMP.blood + (wave > -0.3 ? 3 : 2))
           }
         }
-        const y = Math.round(foot - 10 + Math.sin(t * 1.3) * 1.2)
+        const isDone = percent >= 100
+        const tone = isDone ? [SPOT.greenDark, SPOT.led, SPOT.green] : isAsleep ? [RAMP.stone + 1, RAMP.stone + 4, RAMP.stone + 3] : [SPOT.amberDark, SPOT.laurelGold, SPOT.amber]
+        const y = Math.round(foot - 10 + (isHere && !isDone ? Math.sin(t * 2) * 1.6 : 0))
         for (let b = 0; b < 15; b++) {
           const half = b < 7 ? 3 : 14 - b
-          for (let a = -half; a <= half; a++) this.dot(cx + a, y - 10 + b, Math.abs(a) === half || b === 0 ? SPOT.amberDark : a < 0 ? SPOT.laurelGold : SPOT.amber)
+          for (let a = -half; a <= half; a++) this.dot(cx + a, y - 10 + b, Math.abs(a) === half || b === 0 ? tone[0]! : a < 0 ? tone[1]! : tone[2]!)
         }
         break
       }
       case 7: {
-        // Links: two, one through the other. Gold once there is a link to play.
-        const isOpen = labels.lit[3] === true
-        const [light, mid, dark] = isOpen ? [RAMP.gold + 6, RAMP.gold + 4, RAMP.gold + 2] : [SPOT.metalLight, SPOT.metal, SPOT.metalDark]
+        // Links: two, apart until they come, then one through the other. Gold once there is one to play.
+        const isOpen = labels.lit[3] === true && !isAsleep
+        const [light, mid, dark] = isOpen ? [RAMP.gold + 6, RAMP.gold + 4, RAMP.gold + 2] : isAsleep ? [RAMP.stone + 4, RAMP.stone + 3, RAMP.stone + 1] : [SPOT.metalLight, SPOT.metal, SPOT.metalDark]
         const y0 = foot - 8
+        const apart = isAsleep ? 12 : isHere && !isOpen ? 8 + Math.round((0.5 + 0.5 * Math.sin(t * 1.4)) * 4) : 7
         const link = (x0: number, only?: (a: number, b: number) => boolean): void => {
           for (let b = -6; b <= 6; b++) {
             for (let a = -10; a <= 10; a++) {
@@ -945,15 +1017,15 @@ export class Pit {
             }
           }
         }
-        link(cx - 7)
-        link(cx + 7)
-        link(cx - 7, (a, b) => b > 0 && a > 2)
+        link(cx - apart)
+        link(cx + apart)
+        if (apart < 10) link(cx - apart, (a, b) => b > 0 && a > 2)
         break
       }
       default:
         // Player: everything frozen, waiting for it to load.
         this.paintPlayer(cx + 9, foot)
-        for (let n = 0; n < 7; n++) {
+        for (let n = 0; n < 7 && isHere; n++) {
           const life = (t * (0.09 + noise(n, 1, 78) * 0.05) + noise(n, 2, 78)) % 1
           const x = this.cx + (noise(n, 3, 78) * 2 - 1) * ring.outer * 0.9 + Math.sin(life * 5 + n) * 2
           const y = ring.y - ring.tall + life * ring.tall
@@ -974,14 +1046,15 @@ export class Pit {
         this.dot(x + a, foot - 18 + b, isScreen ? SPOT.outline : b === 0 || a === -13 ? SPOT.metal : SPOT.metalDark)
       }
     }
-    this.dot(x + 10, foot - 14, SPOT.eye)
-    this.dot(x + 10, foot - 10, SPOT.amber)
+    const isOn = this.ring === LAST
+    this.dot(x + 10, foot - 14, isOn ? SPOT.led : SPOT.eye)
+    this.dot(x + 10, foot - 10, isOn ? SPOT.amber : SPOT.metal)
     const cx = x - 2
     const cy = foot - 10
     if (this.labels.lit[4] === true) {
       // It plays.
       for (let a = -4; a <= 5; a++) for (let b = -5; b <= 5; b++) if (Math.abs(b) <= (5 - a) * 0.56) this.dot(cx + a, cy + b, SPOT.led)
-    } else {
+    } else if (isOn) {
       for (let k = 0; k < 8; k++) {
         const a = (k / 8) * Math.PI * 2
         const age = (k - Math.floor(t * 6) + 800) % 8

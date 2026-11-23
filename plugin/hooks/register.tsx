@@ -4,7 +4,7 @@ import type { EngineInterface, Register } from 'claude-code'
 import type { Journey, TaskList, TransferRow } from '../types'
 import { draw, drawRule, makeScene, toCells, type Scene } from './inferno'
 import { danteTool, declaredSteps, downloadOf, factsFrom, isDub, outputText, parseTransfers, pitSize, readFrames, shortFacts, STEP_OF, targetOf, taskChange, titleOf } from './parse'
-import { advance, isSettled, progressOf, type Motion, type Progress } from './progress'
+import { advance, factsAt, isSettled, progressOf, REHEARSAL, stopOf, type Motion, type Progress, type Scene as Stop } from './progress'
 import { DANTE, STEPS, words, type Lang } from './words'
 
 // Dante's look for Claude Code ("Inferno"): the laurelled profile in the header, the five circles
@@ -182,6 +182,10 @@ export const register: Register = on => {
 
   // The five letters and what is cut beside them: the steps of a film, or the share of any other request.
   const marks = (): { title: string; facts: string[]; lit: boolean[]; now: number } => {
+    const shown = stop()
+    if (shown !== undefined && rehearsal !== undefined) {
+      return { title: 'Night of the Living Dead', facts: shortFacts(factsAt(shown, rehearsal.elapsed)), lit: STEPS.map((_, n) => n < shown.did), now: shown.now }
+    }
     if (journeyNow !== null) {
       const { title, facts, did, reached, status } = journeyNow
       return { title, facts: shortFacts(facts), lit: STEPS.map(step => did.includes(step)), now: status === 'done' ? -1 : reached }
@@ -199,13 +203,14 @@ export const register: Register = on => {
 
   // The numbers that move something in the picture.
   const numbers = () => {
-    const { results, checked, cached, percent } = journeyNow?.facts ?? {}
+    const shown = stop()
+    const { results, checked, cached, percent } = shown !== undefined && rehearsal !== undefined ? factsAt(shown, rehearsal.elapsed) : (journeyNow?.facts ?? {})
     return { results, checked, cached, percent }
   }
 
   const helperState = (): string => {
     const to = target()
-    return JSON.stringify({ depth: to.depth, mood: to.mood, isDone: to.isDone, pace: animation, labels: { circles: words(lang).circles, ...marks(), ...numbers() } })
+    return JSON.stringify({ depth: to.depth, mood: to.mood, isDone: to.isDone, jump, pace: animation, labels: { circles: words(lang).circles, ...marks(), ...numbers() } })
   }
 
   // What the helper needs this beat: to start, to be told something, or to stop.
@@ -240,13 +245,38 @@ export const register: Register = on => {
     return { tell: { file: `${helper.dir}/state.json`, text: say } }
   }
 
+  // The rehearsal: a made-up request to look at the circles with. Never mixed with a real one.
+  let rehearsal: { at: number; elapsed: number; isHeld: boolean } | undefined
+  let jump = 0
+  let isRedrawDue = false
+  const stop = (): Stop | undefined => (rehearsal === undefined ? undefined : REHEARSAL[rehearsal.at])
+  const rehearse = (at: number, isHeld: boolean) => {
+    const bounded = Math.max(0, Math.min(REHEARSAL.length - 1, at))
+    rehearsal = { at: bounded, elapsed: 0, isHeld }
+    jump += 1
+    motion = { depth: REHEARSAL[bounded]?.depth ?? 0, stars: 0 }
+    isRedrawDue = true
+  }
+  const endRehearsal = () => {
+    if (rehearsal === undefined) return
+    rehearsal = undefined
+    jump += 1
+    isRedrawDue = true
+  }
+
   const tally = () => {
     const all = Object.values(tasksNow.all)
     return { total: all.length, done: all.filter(one => one === 'done').length }
   }
 
-  const target = (): Progress =>
-    progressOf({ journey: journeyNow, tasks: tally(), download: downloadOf(transfersNow), isWorking })
+  const target = (): Progress => {
+    const shown = stop()
+    if (shown !== undefined && rehearsal !== undefined) {
+      const percent = shown.isDownload === true ? (factsAt(shown, rehearsal.elapsed).percent ?? 0) : 0
+      return { depth: shown.depth + Math.min(0.99, percent / 100), mood: shown.isDone === true ? 'done' : shown.depth < 0 ? 'idle' : 'running', isDone: shown.isDone === true }
+    }
+    return progressOf({ journey: journeyNow, tasks: tally(), download: downloadOf(transfersNow), isWorking })
+  }
 
   const pitCells = (): string | undefined =>
     pit === undefined
@@ -258,9 +288,22 @@ export const register: Register = on => {
   // One beat: move the picture on, and say what needs repainting.
   const beat = (): { pit?: string; rule?: string } => {
     const to = target()
-    const isBusy = isWorking || !isSettled(motion, to)
+    const isBusy = isWorking || rehearsal !== undefined || !isSettled(motion, to)
     beats += 1
     seconds += BEAT_MS / 1000
+    const shown = stop()
+    if (shown !== undefined && rehearsal !== undefined) {
+      rehearsal.elapsed += BEAT_MS / 1000
+      if (shown.isDownload === true && beats % 5 === 0) isRedrawDue = true
+      if (rehearsal.isHeld) {
+        // Held on one circle, its download runs again and again.
+        if (rehearsal.elapsed > shown.seconds) rehearsal.elapsed = 0
+      } else if (rehearsal.elapsed > shown.seconds) {
+        if (rehearsal.at + 1 >= REHEARSAL.length) endRehearsal()
+        else rehearsal = { at: rehearsal.at + 1, elapsed: 0, isHeld: false }
+        isRedrawDue = true
+      }
+    }
     restless = isBusy ? 0 : restless + BEAT_MS / 1000
     motion = advance(motion, to, BEAT_MS / 1000)
     const pace = animation === 'off' ? 0 : isBusy ? (animation === 'calm' ? 2 : 1) : animation === 'calm' || restless > REST_AFTER_S ? 0 : 3
@@ -300,7 +343,7 @@ export const register: Register = on => {
     transfersNow = await read($, transfersAtom)
     motion = { depth: target().depth, stars: target().isDone ? 1 : 0 }
 
-    await $.command.register({ name: 'inferno', description: words(lang).paneHelp })
+    await $.command.register({ name: 'inferno', description: words(lang).paneHelp, argumentHint: words(lang).hint, immediate: true })
     if ((await $.store.get('pane')) !== 'closed') {
       void $.ui.open({ id: PANE_ID, title: 'Inferno', columns: PANE_COLUMNS }).catch(() => undefined)
     }
@@ -309,6 +352,10 @@ export const register: Register = on => {
     if (animation !== 'off' || isPicture) {
       beatTimer = $.clock.every(BEAT_MS, () => {
         const due = beat()
+        if (isRedrawDue) {
+          isRedrawDue = false
+          $.ui.invalidate('ui.render')
+        }
         const { start, tell } = tend()
         if (start !== undefined) void runHelper($, start, node, cell, start.said)
         if (tell !== undefined) void $.fs.write(tell.file, tell.text).catch(() => undefined)
@@ -357,7 +404,20 @@ export const register: Register = on => {
     return { sections: [...result.sections.filter(section => section.id !== VOICE.id), VOICE] }
   })
 
-  on('command.run', { command: 'inferno' }, async $ => {
+  on('command.run', { command: 'inferno' }, async ($, e) => {
+    const asked = e.args.trim().toLowerCase()
+    const circle = /^[1-9]$/.test(asked) ? Number(asked) : undefined
+    if (asked === 'demo' || circle !== undefined) {
+      await $.store.set('pane', 'open')
+      await $.ui.open({ id: PANE_ID, title: 'Inferno', columns: PANE_COLUMNS })
+      if (circle === undefined) rehearse(0, false)
+      else rehearse(stopOf(circle), true)
+      return { text: words(lang).rehearsing }
+    }
+    if (asked === 'stop') {
+      endRehearsal()
+      return { text: words(lang).rehearsed }
+    }
     const isUp = (await $.ui.panes()).some(one => one.id === PANE_ID && one.isPlaced)
     if (isUp) {
       await $.ui.close({ id: PANE_ID })
@@ -381,6 +441,7 @@ export const register: Register = on => {
 
   // A new request: what was finished (or failed) is put away.
   on('prompt.submit', async ($, e, next) => {
+    if (!e.text.startsWith('/')) endRehearsal()
     journeyNow = await update($, journeyAtom, j => (j !== null && j.endedAt !== null ? null : j))
     const { total, done } = tally()
     if (total > 0 && done === total) tasksNow = await update($, tasksAtom, () => NO_TASKS)
@@ -412,6 +473,8 @@ export const register: Register = on => {
       return ran
     }
 
+    // Something real: the rehearsal is over.
+    endRehearsal()
     if (step !== undefined) {
       const reached = STEPS.indexOf(step)
       const now = await $.clock.now()
@@ -555,7 +618,7 @@ export const register: Register = on => {
     await read($, transfersAtom)
     await read($, tickAtom)
     const now = await $.clock.now()
-    const { Box, Image, Raster, Text } = $.ui.resolve(e)
+    const { Box, Button, Image, Raster, Text } = $.ui.resolve(e)
     const w = words(lang)
     const to = target()
 
@@ -579,12 +642,28 @@ export const register: Register = on => {
         : total > 0
           ? [w.tasks(done, total), tasksNow.title]
           : []
-    const line = to.isDone ? w.verseEnd : said.filter(Boolean).join(' · ')
+    const shown = stop()
+    const line =
+      shown !== undefined && rehearsal !== undefined
+        ? shown.isDone === true
+          ? w.verseEnd
+          : w.found(factsAt(shown, rehearsal.elapsed), shown.did > 0 ? 'Night of the Living Dead' : '').filter(Boolean).join(' · ') || w.circle(Math.max(0, Math.floor(shown.depth)))
+        : to.isDone
+          ? w.verseEnd
+          : said.filter(Boolean).join(' · ')
     return (
       <Box flexDirection="column">
         {picture === undefined ? null : <Image key="pit" source={picture} columns={columns} rows={rows} alt="Inferno" />}
         {cells === undefined ? null : <Raster key="pit" columns={columns} rows={rows} cells={cells} />}
         <Text color={journey?.status === 'failed' ? EMBER : GOLD}>{truncate(line, columns)}</Text>
+        {rehearsal === undefined ? null : (
+          <Box flexDirection="row">
+            <Text dimColor>{truncate(w.rehearsal(rehearsal.at + 1, REHEARSAL.length), Math.max(10, columns - 18))} </Text>
+            <Button key="back" label="‹" hotkey="a" onPress={() => rehearse((rehearsal?.at ?? 1) - 1, true)} />
+            <Button key="on" label="›" hotkey="s" onPress={() => rehearse((rehearsal?.at ?? -1) + 1, true)} />
+            <Button key="end" label="✕" hotkey="x" onPress={endRehearsal} />
+          </Box>
+        )}
       </Box>
     )
   })

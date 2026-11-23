@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { CIRCLES, draw, drawRule, makeScene, PALETTE, toCells, type Mood } from '../plugin/hooks/inferno'
 import { declaredSteps, downloadOf, factsFrom, isDub, pitSize, shortFacts, readFrames, targetOf, taskChange } from '../plugin/hooks/parse'
-import { advance, isSettled, progressOf } from '../plugin/hooks/progress'
+import { advance, factsAt, isSettled, progressOf, REHEARSAL, stopOf } from '../plugin/hooks/progress'
 import { words } from '../plugin/hooks/words'
 import type { Journey } from '../plugin/types'
 
@@ -52,6 +52,25 @@ describe('progress down the circles', () => {
     // The next request starts again from the top.
     const start = progressOf({ journey: journey(0, 'running'), tasks: none, download: null, isWorking: true })
     expect(advance(now, start, 0.1).depth).toBe(0)
+  })
+})
+
+describe('the rehearsal', () => {
+  it('goes down every circle once, from the gate to the stars', () => {
+    const depths = REHEARSAL.map(scene => scene.depth)
+    expect(depths[0]).toBe(-1)
+    expect([...depths].sort((a, b) => a - b)).toEqual(depths)
+    for (let circle = 1; circle <= CIRCLES; circle++) expect(REHEARSAL[stopOf(circle)]!.depth).toBe(circle - 1)
+    expect(REHEARSAL.at(-1)!.isDone).toBe(true)
+    expect(REHEARSAL.map(scene => scene.did)).toEqual([...REHEARSAL.map(scene => scene.did)].sort((a, b) => a - b))
+  })
+
+  it('runs the download from nothing to all of it, and no other number moves', () => {
+    const download = REHEARSAL.find(scene => scene.isDownload)!
+    expect(factsAt(download, 0).percent).toBe(0)
+    expect(factsAt(download, download.seconds).percent).toBe(100)
+    const still = REHEARSAL[4]!
+    expect(factsAt(still, 0)).toEqual(factsAt(still, 9))
   })
 })
 

@@ -73,16 +73,13 @@ const FEET: readonly Sprite[] = [
 export const DANTE: readonly Sprite[] = FEET.map(feet => [...DANTE_BODY, ...feet])
 export const VIRGIL: readonly Sprite[] = FEET.map(feet => [...VIRGIL_BODY, ...feet.map(row => row.replaceAll('B', 'm'))])
 
-/** What the storm carries: magnets and torrents. */
-export const MAGNET: Sprite = art('.KKKKKKK.', 'KRRRRRRRK', 'KRRKKKRRK', 'KRRK.KRRK', 'KrRK.KrRK', 'KWWK.KWWK', 'KWWK.KWWK', '.KK...KK.')
+/** A torrent. */
 export const FILE: Sprite = art('KKKKKK..', 'KWWWWTK.', 'KWWgWWTK', 'KWWgWWWK', 'KWgggWWK', 'KWWgWWWK', 'KWWWWWWK', 'KKKKKKKK')
 export const REEL: Sprite = art('..KKKKK..', '.KMMMMMK.', 'KMMKMKMMK', 'KMKMMMKMK', 'KMMMKMMMK', 'KMKMMMKMK', 'KMMKMKMMK', '.KMMMMMK.', '..KKKKK..')
 /** Given, and taken: the arrows of every torrent client. */
 export const UP: Sprite = art('......K......', '.....KgK.....', '....KgDgK....', '...KgDDgeK...', '..KgDDDggeK..', '.KgDDDDgggeK.', 'KKKKKgDgeKKKK', '....KgDgeK...', '....KgDgeK...', '....KgDgeK...', '....KgggeK...', '....KKKKKK...')
 export const DOWN: Sprite = art('....KKKKKK...', '....KaaarK...', '....KaHarK...', '....KaHarK...', '....KaHarK...', 'KKKKKaHarKKKK', '.KaHHHHaaarK.', '..KaHHHaarK..', '...KaHHarK...', '....KaHrK....', '.....KaK.....', '......K......')
 export const CRATE: Sprite = art('KKKKKKKKKKK', 'KyyyyyyyyyK', 'KyzzzzzzzyK', 'KyzyzzzyzyK', 'KyzzyzyzzyK', 'KyzzzyzzzyK', 'KyzzyzyzzyK', 'KyzyzzzyzyK', 'KyyyyyyyyyK', 'KKKKKKKKKKK')
-/** Here lies a file. */
-export const TOMB: Sprite = art('...KKKKK...', '.KKMMMMMKK.', 'KMMMKKKMMMK', 'KMMKMMMKMMK', 'KMKMMKKMKMK', 'KMKMKMMMKMK', 'KMKMMKKMKMK', 'KMMKMMMKMMK', 'KMMMKKKMMMK', 'KMMMMMMMMMK', 'KmMMMMMMMmK', 'KmmmmmmmmmK')
 export const CAR: Sprite = art('.......VVVVVVVV...........', '.....VVbbVbbbbVVV.........', '....VVbbbVbbbbbVVVV.......', 'VVVVVVVVVVVVVVVVVVVVVVVVV.', 'VaVVVVVVVVVVVVVVVVVVVVVVyV', 'VVVVmmmVVVVVVVVVVmmmVVVVVV', '...mKKKm........mKKKm.....', '....mmm..........mmm......')
 export const POPCORN: Sprite = art('.W.WyW.W.', 'WyWWWyWWW', '.WWyWWWy.', 'aWaWaWaWa', 'aWaWaWaWa', '.WaWaWaW.', '.aWaWaWa.', '.aWaWaWa.')
 
@@ -119,7 +116,7 @@ export interface Canvas {
 }
 
 /** Draw a sprite with its feet at (x, foot), x its middle. */
-export function stamp({ w, h, px }: Canvas, art: Sprite, x: number, foot: number, facesRight = true): void {
+export function stamp({ w, h, px }: Canvas, art: Sprite, x: number, foot: number, facesRight = true, tint: (color: number) => number = color => color): void {
   const top = foot - art.length + 1
   for (let j = 0; j < art.length; j++) {
     const row = art[j]!
@@ -129,7 +126,7 @@ export function stamp({ w, h, px }: Canvas, art: Sprite, x: number, foot: number
     for (let i = 0; i < row.length; i++) {
       const spot = KEY[row[facesRight ? i : row.length - 1 - i]!]
       const X = left + i
-      if (spot !== undefined && X >= 0 && X < w) px[Y * w + X] = SPOT[spot]
+      if (spot !== undefined && X >= 0 && X < w) px[Y * w + X] = tint(SPOT[spot])
     }
   }
 }
