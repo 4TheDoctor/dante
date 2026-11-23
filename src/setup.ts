@@ -2,6 +2,7 @@ import { copyFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { createInterface, type Interface } from 'node:readline'
+import { offerAudio4films } from './audio4films.js'
 import { configPath, loadConfig } from './config.js'
 import { runDoctor } from './doctor.js'
 import { ensureHome, packageRoot } from './launch.js'
@@ -88,6 +89,8 @@ library = "library"   # where full-disc menus are copied, inside the Dante folde
 `
 }
 
+const offerDubs = (rl: Interface): Promise<void> => offerAudio4films({ yes: (q, fallback) => yes(rl, q, fallback), write: t => void process.stdout.write(t) })
+
 export async function runSetup(): Promise<number> {
   const { home } = ensureHome()
   const path = configPath(home)
@@ -97,6 +100,7 @@ export async function runSetup(): Promise<number> {
     const existing = existsSync(path) ? loadConfig(home) : undefined
     if (existing?.engines.length && !(await yes(rl, `${path} already has ${existing.engines.length} engine(s). Start again`, false))) {
       process.stdout.write('Keeping it. Edit dante.toml by hand any time.\n')
+      await offerDubs(rl)
       return 0
     }
 
@@ -138,6 +142,7 @@ export async function runSetup(): Promise<number> {
     writeFileSync(path, renderConfig({ languages: langs, engines, debrid }))
     process.stdout.write(`\nWrote ${path}\n`)
     installTheme()
+    await offerDubs(rl)
     process.stdout.write(`\n${await runDoctor(new Dante(loadConfig(home)))}\n\nNow run: dante\n`)
     return 0
   } finally {

@@ -1,24 +1,12 @@
-import { execFile } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { promisify } from 'node:util'
+import { INSTALL, version } from './audio4films.js'
 import { configPath, danteHome } from './config.js'
 import { findClaude } from './launch.js'
 import { availablePlayers } from './play.js'
 import type { Dante } from './service.js'
 
-const run = promisify(execFile)
-
 /** The Claude Code release the Inferno mod was last checked against. */
 export const TESTED_CLAUDE = '2.1.330'
-
-async function version(command: string, args = ['--version']): Promise<string | undefined> {
-  try {
-    const { stdout } = await run(command, args, { timeout: 10_000 })
-    return stdout.trim().split('\n')[0]
-  } catch {
-    return undefined
-  }
-}
 
 /** A plain report: one line per check, OK / WARN / FAIL first, so failures are easy to spot. */
 export async function runDoctor(dante: Dante): Promise<string> {
@@ -70,7 +58,7 @@ export async function runDoctor(dante: Dante): Promise<string> {
 
   const a4f = await version('audio4films')
   if (a4f) ok(`${a4f} (dubs onto better video)`)
-  else warn('audio4films not installed: plan_dub needs it (github.com/4TheDoctor/audio4films)')
+  else warn(`audio4films not installed: plan_dub needs it (optional; "dante setup" offers it, or: ${INSTALL})`)
 
   return lines.join('\n')
 }
