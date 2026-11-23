@@ -122,11 +122,13 @@ export async function launch(extra: string[]): Promise<number> {
   let lang = 'en'
   let animation = 'full'
   let graphics: 'auto' | 'image' | 'blocks' = 'auto'
+  let voice: string | undefined
   try {
     const config = loadConfig(home)
     lang = config.ui_language
     animation = config.animation
     graphics = config.graphics
+    voice = config.voice
   } catch {
     // A broken dante.toml is reported by the MCP server and doctor; the look falls back to English.
   }
@@ -141,6 +143,7 @@ export async function launch(extra: string[]): Promise<number> {
     DANTE_UI_LANG: lang,
     DANTE_ANIMATION: animation,
     DANTE_NODE: process.execPath,
+    ...(voice === undefined ? {} : { DANTE_VOICE: voice }),
     ...(run === undefined ? {} : { DANTE_RUN: run, DANTE_PINNED_HEADER: '1' }),
     ...lookEnv(graphics, cellSize),
   }

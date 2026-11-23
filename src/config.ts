@@ -34,6 +34,8 @@ const schema = z.object({
   animation: z.enum(['full', 'calm', 'off']).default('full'),
   /** How the circles are drawn: as pictures (kitty, Ghostty), or with block characters anywhere. */
   graphics: z.enum(['auto', 'image', 'blocks']).default('auto'),
+  /** The VoiceMode voice Dante speaks with, where there is one. */
+  voice: z.string().regex(/^[\w.-]{1,64}$/, 'a voice is named with letters, digits, dots and dashes').optional(),
   preferences: z
     .object({
       resolutions: z.array(resolution).default(['2160p', '1080p']),

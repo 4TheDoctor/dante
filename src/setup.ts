@@ -67,6 +67,7 @@ export function renderConfig(a: Answers): string {
 ui_language = "en"          # "en" or "es": the words in Dante's interface
 animation = "full"          # full | calm (moves only while working) | off
 graphics = "auto"           # auto | image (kitty, Ghostty) | blocks (any terminal)
+# voice = "NAME"            # a VoiceMode voice for Dante to speak with
 
 [preferences]
 resolutions = ["2160p", "1080p"]       # best first

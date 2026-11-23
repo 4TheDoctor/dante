@@ -9,6 +9,7 @@ import { danteTool, declaredSteps, downloadOf, enginesThatFailed, factsFrom, fau
 import { doingOf, isStanding, next as nextPicture, pictureOf, STILL, type Portrait } from './portrait'
 import { advance, factsAt, isSettled, progressOf, REHEARSAL, stopOf, type Motion, type Progress, type Scene as Stop } from './progress'
 import { gaugeOf, INK, modelPieces, parseStatus, pathPieces, tilesOf, tilesThatFit, type Piece, type Status } from './status'
+import { spoken } from './voice'
 import { DANTE, STEPS, words, type Lang, type StepId } from './words'
 
 // Dante's look for Claude Code ("Inferno"): the laurelled profile in the header, the five circles
@@ -484,7 +485,8 @@ export const register: Register = on => {
 
   on('prompt.compose', async ($, e, next) => {
     const result = await next(e)
-    return { sections: [...result.sections.filter(section => section.id !== VOICE.id), VOICE] }
+    const voice = { ...VOICE, text: VOICE.text + spoken(await $.env.get('DANTE_VOICE')) }
+    return { sections: [...result.sections.filter(section => section.id !== VOICE.id), voice] }
   })
 
   on('command.run', { command: 'inferno' }, async ($, e) => {

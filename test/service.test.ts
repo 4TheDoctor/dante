@@ -42,6 +42,9 @@ describe('config', () => {
     const c = parseConfig('')
     expect(c.preferences.resolutions).toEqual(['2160p', '1080p'])
     expect(c.play.port).toBe(7879)
+    expect(c.voice).toBeUndefined()
+    expect(parseConfig('voice = "dante"').voice).toBe('dante')
+    expect(() => parseConfig('voice = "two words"')).toThrow(/voice/)
     expect(() => parseConfig('[preferences]\nresolutions = ["8k"]')).toThrow(/preferences\.resolutions/)
   })
 

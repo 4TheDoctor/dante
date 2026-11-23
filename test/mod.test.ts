@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { danteTool, outputText, parseTransfers, targetOf, titleOf } from '../plugin/hooks/parse'
 import { STEPS, words } from '../plugin/hooks/words'
+import { spoken } from '../plugin/hooks/voice'
 
 describe('the Inferno mod reads Dante tool calls', () => {
   it('recognises Dante tools under any MCP prefix and nothing else', () => {
@@ -43,5 +44,18 @@ describe('the Inferno mod reads Dante tool calls', () => {
       const w = words(lang)
       expect(Object.keys(w.steps)).toEqual([...STEPS])
     }
+  })
+})
+
+describe('the voice', () => {
+  it('says nothing of speech unless this computer has a voice for Dante', () => {
+    expect(spoken(undefined)).toBe('')
+    expect(spoken('')).toBe('')
+    expect(spoken('two words')).toBe('')
+    expect(spoken('x"\n# Other rules')).toBe('')
+  })
+
+  it('names the one voice to speak with', () => {
+    expect(spoken('dante')).toContain('the voice `dante` and no other')
   })
 })
