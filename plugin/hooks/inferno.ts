@@ -276,7 +276,7 @@ function drawPit(scene: Scene, view: View): Uint8Array {
   // Fire on the ledges: embers everywhere, a blaze where the work is. The ninth is ice.
   for (let i = 0; i < CIRCLES - 1; i++) {
     const near = Math.max(0, 1 - Math.abs(i - view.depth) / 2.2)
-    const heat = view.mood === 'failed' ? 0.5 + near * 0.5 : view.mood === 'running' ? 0.1 + near * 0.9 : 0.08 + near * 0.3
+    const heat = view.mood === 'failed' ? (i === Math.floor(Math.max(0, view.depth)) ? 0.3 : 0.06) : view.mood === 'running' ? 0.1 + near * 0.9 : 0.08 + near * 0.3
     burn(scene, px, i, heat, view.t)
   }
   const lake = rings[CIRCLES - 1]!
@@ -338,19 +338,6 @@ function drawSky(scene: Scene, view: View): Uint8Array {
   return px
 }
 
-/** The burning rule under the header: one cell tall, two pixels. `heat` 0 is glowing coals. */
-export function drawRule(w: number, t: number, heat: number): Uint8Array {
-  const px = new Uint8Array(w * 2)
-  const tick = Math.floor(t * 9)
-  for (let x = 0; x < w; x++) {
-    const glow = noise(x >> 1, 1, tick >> 2)
-    px[w + x] = glow < 0.2 ? C.robeDark : glow < 0.65 ? C.ember : glow < 0.9 ? C.orange : C.yellow
-    const tongue = noise(x, 2, tick)
-    px[x] = tongue < heat * 0.55 ? (tongue < heat * 0.12 ? C.yellow : tongue < heat * 0.3 ? C.orange : C.ember) : C.void
-  }
-  return px
-}
-
 const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
 function base64(bytes: Uint8Array): string {
   const native = (bytes as Uint8Array & { toBase64?: () => string }).toBase64
@@ -382,6 +369,22 @@ export function toCells(px: Uint8Array, w: number, h: number): string {
       view.setUint32(at + 8, PALETTE[px[(row * 2 + 1) * w + x]!]!, true)
       at += 12
     }
+  }
+  return base64(bytes)
+}
+
+/** The burning rule under the header where there are no pictures: one cell tall, flames in eighths. */
+export function drawRule(w: number, t: number, heat: number): string {
+  const bytes = new Uint8Array(w * 12)
+  const view = new DataView(bytes.buffer)
+  for (let x = 0; x < w; x++) {
+    const swell = 0.5 + 0.3 * Math.sin(x * 0.16 + t * 0.9) + 0.2 * Math.sin(x * 0.41 - t * 0.6)
+    const lick = noise(x, 2, Math.floor(t * 8))
+    const tall = Math.max(1, Math.min(8, Math.round(1 + heat * (swell * 4 + lick * 4))))
+    const color = heat <= 0 ? C.robeDark : tall > 6 ? C.yellow : tall > 4 ? C.orange : tall > 2 || heat > 0.5 ? C.ember : noise(x, 3, Math.floor(t * 2)) < 0.3 ? C.ember : C.robeDark
+    view.setUint32(x * 12, 0x2580 + tall, true)
+    view.setUint32(x * 12 + 4, PALETTE[color]!, true)
+    view.setUint32(x * 12 + 8, 0x01000000, true)
   }
   return base64(bytes)
 }

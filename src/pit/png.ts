@@ -24,9 +24,10 @@ function chunk(type: string, data: Uint8Array): Buffer {
 
 /**
  * An indexed PNG of W x H screen pixels, each pixel of the drawing a hard square of `scale`. The
- * drawing covers it whole; what sticks out at the right and bottom is cut.
+ * drawing covers it whole; what sticks out at the right and bottom is cut. Pixels of the colour
+ * `clear` are see-through.
  */
-export function encodePng(px: Uint8Array, w: number, h: number, scale: number, W = w * scale, H = h * scale): Buffer {
+export function encodePng(px: Uint8Array, w: number, h: number, scale: number, W = w * scale, H = h * scale, clear?: number): Buffer {
   const stride = W + 1
   const raw = Buffer.alloc(stride * H)
   for (let y = 0; y * scale < H && y < h; y++) {
@@ -43,6 +44,7 @@ export function encodePng(px: Uint8Array, w: number, h: number, scale: number, W
     Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
     chunk('IHDR', head),
     chunk('PLTE', PLTE),
+    ...(clear === undefined ? [] : [chunk('tRNS', Uint8Array.from({ length: clear + 1 }, (_, n) => (n === clear ? 0 : 255)))]),
     chunk('IDAT', deflateSync(raw, { level: 1 })),
     chunk('IEND', new Uint8Array(0)),
   ])

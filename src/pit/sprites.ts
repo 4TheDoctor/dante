@@ -73,6 +73,41 @@ const FEET: readonly Sprite[] = [
 export const DANTE: readonly Sprite[] = FEET.map(feet => [...DANTE_BODY, ...feet])
 export const VIRGIL: readonly Sprite[] = FEET.map(feet => [...VIRGIL_BODY, ...feet.map(row => row.replaceAll('B', 'm'))])
 
+/** Sat down, face in hands. */
+export const DANTE_DOWN: Sprite = art(
+  '....KKKKK....',
+  '...KLGLGLK...',
+  '..KGLGlGLGK..',
+  '..KRRRRRRRK..',
+  '.KRRHRRRWWK..',
+  '.KRHRRRWSSSK.',
+  '.KRRRRWSSSSK.',
+  '.KRRRRWKKSKS.',
+  '.KrRRRRWSSSSK',
+  '..KRRRRRRSSSK',
+  '.KRRHRRRRRSSK',
+  '.KRRRRRRRRRK.',
+  'KRRRRrRRRRRRK',
+  'KrRRRrRRRRBBK',
+  'KKKKKKKKKKKKK',
+)
+
+/** Out of order. */
+export const VIRGIL_DOWN: Sprite = [
+  '........KaK.',
+  '.......KpK..',
+  ...VIRGIL_BODY.slice(2, 5),
+  '..KpaKaKaKa.',
+  '..KpKaKKKaK.',
+  '..KpaKaKaKa.',
+  ...VIRGIL_BODY.slice(8).map(row => row.replaceAll('i', 'm')),
+  '..KmmKKmmK..',
+  '..KKK..KKK..',
+]
+
+/** Mind the fire. */
+export const WARNING: Sprite = art('......K......', '.....KyK.....', '....KyyyK....', '....KyKyK....', '...KyyKyyK...', '...KyyKyyK...', '..KyyyKyyyK..', '..KyyyyyyyK..', '.KyyyyKyyyyK.', '.KyyyyyyyyyK.', 'KKKKKKKKKKKKK')
+
 /** A torrent. */
 export const FILE: Sprite = art('KKKKKK..', 'KWWWWTK.', 'KWWgWWTK', 'KWWgWWWK', 'KWgggWWK', 'KWWgWWWK', 'KWWWWWWK', 'KKKKKKKK')
 export const REEL: Sprite = art('..KKKKK..', '.KMMMMMK.', 'KMMKMKMMK', 'KMKMMMKMK', 'KMMMKMMMK', 'KMKMMMKMK', 'KMMKMKMMK', '.KMMMMMK.', '..KKKKK..')

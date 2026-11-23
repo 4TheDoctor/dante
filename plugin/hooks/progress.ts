@@ -28,7 +28,7 @@ export function progressOf({ journey, tasks, download, isWorking }: ProgressInpu
     // Five steps, nine circles: a step waits on circle 1, 3, 5, 7 or 9, and once done stands on
     // the one below.
     const at = journey.reached * 2
-    if (journey.status === 'failed') return { depth: at, mood: 'failed', isDone: false }
+    if (journey.status === 'failed') return { depth: journey.fault ?? at, mood: 'failed', isDone: false }
     if (journey.status === 'done') {
       const isDone = journey.reached === STEPS.length - 1
       return { depth: Math.min(LAST, at + 1), mood: isDone ? 'done' : idle, isDone }

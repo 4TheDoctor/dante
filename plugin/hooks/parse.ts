@@ -94,13 +94,46 @@ export function parseTransfers(tool: string, text: string): TransferRow[] {
     for (const line of text.split('\n')) {
       const m = /^(\w+) (\S+)  (ready|[^ ].*?)(?: (\d+)%)?  (.+)$/.exec(line.trim())
       if (m === null) continue
-      rows.push({ service: m[1]!, id: m[2]!, name: m[5]!, ready: m[3] === 'ready', status: m[4] !== undefined ? `${m[4]}%` : m[3]! })
+      rows.push({ service: m[1]!, id: m[2]!, name: m[5]!, ready: m[3] === 'ready', status: m[4] !== undefined && !BROKEN.test(m[3]!) ? `${m[4]}%` : m[3]! })
     }
     return rows
   }
   return []
 }
 
+
+/** What AllDebrid, Real-Debrid and TorBox say of a download that will not finish. */
+const BROKEN = /error|fail|dead|virus|infring|expired|too big|deleted|no peer|not downloaded|missing|took more than/i
+export const isBroken = (row: TransferRow): boolean => !row.ready && BROKEN.test(row.status)
+
+/** What a search says of the engines that did not answer. */
+export const enginesThatFailed = (text: string): string => /^Engines that failed: (.+)$/m.exec(text)?.[1] ?? ''
+
+/** Someone said no: the request stops, but nothing is wrong. */
+export const isRefusal = (text: string): boolean => /doesn't want to (?:proceed|take this action)|tool use was rejected|permission to use .* (?:has been )?denied/i.test(text)
+
+const SHUT_OUT = /\b(?:401|403|451)\b|unauthor|forbidden|api ?key|\bauth|\btoken\b|premium|infring|blocked|banned|cloudflare|captcha/i
+
+/** The circle (0 to 8) a failed tool breaks. A search with nothing in it breaks no engine. */
+export function faultAt(tool: string, text: string, isEmpty: boolean): number {
+  switch (tool) {
+    case 'find_title':
+      return 0
+    case 'search_streams':
+      if (isEmpty && !/^Engines that failed:/m.test(text)) return 3
+      return /jackett|prowlarr|torznab|tracker/i.test(text) ? 2 : 1
+    case 'check_cache':
+      return SHUT_OUT.test(text) ? 5 : 4
+    case 'get_links':
+      return 7
+    case 'play':
+    case 'prepare_bdmv':
+    case 'audio4films':
+      return 8
+    default:
+      return SHUT_OUT.test(text) ? 5 : 6
+  }
+}
 
 /** "42%" in the newest unfinished transfer -> 0.42; null when no service reports one. */
 export function downloadOf(rows: readonly TransferRow[]): number | null {
@@ -137,16 +170,39 @@ export function taskChange(tool: string, input: unknown, result: unknown): { id:
   return undefined
 }
 
-/** A frame the pit's helper announces: `pit <absolute path> <number>`. Keeps what is not a whole line yet. */
-export function readFrames(pending: string, text: string): { rest: string; frame: { file: string; generation: number } | undefined } {
+/** A frame the helper announces: `pit <absolute path> <number> <width>x<height>`, or `rule …`. */
+export type Announced = { kind: 'pit' | 'rule'; file: string; generation: number; width: number; height: number }
+
+/** The newest frame of each kind in what the helper wrote. Keeps what is not a whole line yet. */
+export function readFrames(pending: string, text: string): { rest: string; pit?: Announced; rule?: Announced } {
   const lines = (pending + text).split('\n')
-  const rest = lines.pop() ?? ''
-  let frame: { file: string; generation: number } | undefined
+  const heard: { rest: string; pit?: Announced; rule?: Announced } = { rest: lines.pop() ?? '' }
   for (const line of lines) {
-    const m = /^pit (\/.+\.png) (\d+)$/.exec(line)
-    if (m !== null) frame = { file: m[1]!, generation: Number(m[2]) }
+    const m = /^(pit|rule) (\/.+\.png) (\d+) (\d+)x(\d+)$/.exec(line)
+    if (m === null) continue
+    const kind = m[1] as 'pit' | 'rule'
+    heard[kind] = { kind, file: m[2]!, generation: Number(m[3]), width: Number(m[4]), height: Number(m[5]) }
   }
-  return { rest, frame }
+  return heard
+}
+
+/** Why a tool failed, in its own words: one line, without addresses, keys or paths. */
+export function reasonOf(text: string): string {
+  const line = text.split('\n').find(one => one.trim() !== '') ?? ''
+  return line
+    .replace(/^\s*(?:error|tool error)\s*:\s*/i, '')
+    .replace(/https?:\/\/\S+/gi, '…')
+    .replace(/(?:~|\/[\w.-]+)(?:\/[\w.-]+)+/g, '…')
+    .replace(/\b(?=[A-Za-z0-9_-]*\d)[A-Za-z0-9_-]{16,}\b/g, '…')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 100)
+}
+
+/** The same for the burning rule, one row tall: finer, or a flame has no room to be one. */
+export function ruleSize(columns: number, cell: string | undefined): { width: number; height: number; scale: number } {
+  const { width, height } = pitSize(columns, 1, cell)
+  return { width, height, scale: Math.max(1, Math.round(height / 18)) }
 }
 
 /** How big to draw the pit for a pane of that many cells, and how many screen pixels one of its own takes. */

@@ -6,6 +6,7 @@ import { inflateSync } from 'node:zlib'
 import { describe, expect, it } from 'vitest'
 import { PLTE, SPOT } from '../src/pit/palette.js'
 import { encodePng } from '../src/pit/png.js'
+import { CLEAR, Rule } from '../src/pit/rule.js'
 import { Pit, type Goal } from '../src/pit/scene.js'
 import * as sprites from '../src/pit/sprites.js'
 
@@ -145,22 +146,72 @@ describe('frames', () => {
     const { mkdirSync } = await import('node:fs')
     mkdirSync(run)
     const state = join(run, 'state.json')
-    writeFileSync(state, JSON.stringify({ depth: 2, mood: 'running', isDone: false, pace: 'full' }))
-    const child = spawn(process.execPath, ['dist/pit/daemon.js', state, join(run, 'frames'), '200', '400', '2'], { stdio: ['ignore', 'pipe', 'inherit'] })
-    const file = await new Promise<string>((resolve, reject) => {
+    writeFileSync(state, JSON.stringify({ depth: 2, mood: 'running', isDone: false, pace: 'full', heat: 1, pit: { width: 200, height: 400, scale: 2 }, rule: { width: 300, height: 18, scale: 2 } }))
+    const child = spawn(process.execPath, ['dist/pit/daemon.js', state, join(run, 'frames')], { stdio: ['ignore', 'pipe', 'inherit'] })
+    const files = await new Promise<Record<string, string>>((resolve, reject) => {
       child.once('error', reject)
       child.once('exit', code => reject(new Error(`exit ${code}`)))
+      const seen: Record<string, string> = {}
       child.stdout.on('data', data => {
-        const m = /^pit (\/.+\.png) (\d+)$/m.exec(String(data))
-        if (m !== null) resolve(m[1]!)
+        for (const m of String(data).matchAll(/^(pit|rule) (\/.+\.png) \d+ (\d+x\d+)$/gm)) seen[`${m[1]} ${m[3]}`] = m[2]!
+        if (Object.keys(seen).length === 2) resolve(seen)
       })
     })
-    expect(readFileSync(file).subarray(1, 4).toString()).toBe('PNG')
+    expect(Object.keys(files).sort()).toEqual(['pit 200x400', 'rule 300x18'])
+    for (const file of Object.values(files)) expect(readFileSync(file).subarray(1, 4).toString()).toBe('PNG')
     const ended = new Promise(resolve => child.once('exit', resolve))
     writeFileSync(state, '{"stop":true}')
     expect(await ended).toBe(0)
     expect(existsSync(run)).toBe(false)
   }, 15_000)
+})
+
+describe('a fault', () => {
+  it('breaks the circle it happened in, shows why on the sign, and passes', () => {
+    for (let circle = 0; circle < 9; circle++) {
+      const pit = new Pit(161, 396)
+      pit.labels = { circles: [], title: '', facts: [], lit: [], now: -1, reason: 'It broke' }
+      pit.place(circle)
+      const well = run(pit, goal(circle), 2).filter(c => c === SPOT.red).length
+      const broken = run(pit, goal(circle, 'failed'), 2).slice()
+      expect(pit.isSettled(goal(circle, 'failed'))).toBe(true)
+      expect(Math.max(...broken)).toBeLessThan(PLTE.length / 3)
+      expect(broken.filter(c => c === SPOT.red).length).toBeGreaterThan(well)
+      run(pit, goal(circle), 2)
+      expect(pit.isSettled(goal(circle))).toBe(true)
+    }
+  })
+})
+
+describe('a fault above them', () => {
+  it('does not send them back to the gate', () => {
+    const pit = new Pit(161, 396)
+    pit.place(6.4)
+    const still = run(pit, goal(5, 'failed'), 3).slice()
+    expect(pit.isSettled(goal(5, 'failed'))).toBe(true)
+    expect(pit.isSettled(goal(6.4))).toBe(false)
+    run(pit, goal(6.4), 2)
+    expect(pit.isSettled(goal(6.4))).toBe(true)
+    expect(still.length).toBe(161 * 396)
+  })
+})
+
+describe('the burning rule', () => {
+  it('burns high, glows low, and lets the terminal through where there is no fire', () => {
+    const lit = (want: number): number => {
+      const rule = new Rule(200, 9)
+      let px = rule.frame(want, 0.1)
+      for (let i = 0; i < 80; i++) px = rule.frame(want, 0.1)
+      expect(rule.isSettled(want)).toBe(true)
+      expect(Math.max(...px)).toBeLessThan(PLTE.length / 3)
+      return px.filter(c => c !== CLEAR).length
+    }
+    const [out, low, high] = [lit(0), lit(0.22), lit(1)]
+    expect(out).toBe(200)
+    expect(low).toBeLessThan(high)
+    expect(high).toBeLessThan(200 * 9)
+    expect(encodePng(new Uint8Array(4).fill(CLEAR), 2, 2, 1, 2, 2, CLEAR).indexOf('tRNS')).toBeGreaterThan(0)
+  })
 })
 
 describe('which terminals get pictures', () => {

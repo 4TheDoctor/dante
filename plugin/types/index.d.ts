@@ -10,6 +10,11 @@ export type Journey = {
   /** The steps that really happened. */
   did: StepName[]
   facts: Facts
+  /** Why it failed and the circle it broke (0 to 8), when it did. */
+  reason: string
+  fault: number | null
+  /** The download it added: service and number. */
+  transfer: string | null
 }
 
 export type StepName = 'title' | 'search' | 'cache' | 'add' | 'play'

@@ -3,7 +3,7 @@ import type { EngineInterface, Register } from 'claude-code'
 
 import type { Journey, TaskList, TransferRow } from '../types'
 import { draw, drawRule, makeScene, toCells, type Scene } from './inferno'
-import { danteTool, declaredSteps, downloadOf, factsFrom, isDub, outputText, parseTransfers, pitSize, readFrames, shortFacts, STEP_OF, targetOf, taskChange, titleOf } from './parse'
+import { danteTool, declaredSteps, downloadOf, enginesThatFailed, factsFrom, faultAt, isBroken, isDub, isRefusal, outputText, parseTransfers, pitSize, readFrames, reasonOf, ruleSize, shortFacts, STEP_OF, targetOf, taskChange, titleOf } from './parse'
 import { advance, factsAt, isSettled, progressOf, REHEARSAL, stopOf, type Motion, type Progress, type Scene as Stop } from './progress'
 import { DANTE, STEPS, words, type Lang } from './words'
 
@@ -37,17 +37,17 @@ const BEAT_MS = 100
 const REST_AFTER_S = 300
 
 // Literals on purpose: Claude Code scans these references before running the module.
-const journeyAtom = atom({ plugin: 'dante', key: 'journey' } as const, null, { shape: 'journey-2' })
+const journeyAtom = atom({ plugin: 'dante', key: 'journey' } as const, null, { shape: 'journey-3' })
 const transfersAtom = atom({ plugin: 'dante', key: 'transfers' } as const, [], { shape: 'transfers-1' })
 const tickAtom = atom({ plugin: 'dante', key: 'tick' } as const, 0)
 const NO_TASKS: TaskList = { title: '', all: {} }
 const tasksAtom = atom({ plugin: 'dante', key: 'tasks' } as const, NO_TASKS, { shape: 'tasks-2' })
 
-type CallState = { isRunning: boolean; isErrored: boolean; isInterrupted: boolean }
-const markOf = (call: CallState): { glyph: string; color: string } =>
+type CallState = { tool_use_id?: string | undefined; isRunning: boolean; isErrored: boolean; isInterrupted: boolean }
+const markOf = (call: CallState, stopped: ReadonlySet<string>): { glyph: string; color: string } =>
   call.isRunning
     ? { glyph: '◌', color: GOLD }
-    : call.isErrored || call.isInterrupted
+    : call.isErrored || call.isInterrupted || stopped.has(call.tool_use_id ?? '')
       ? { glyph: '✗', color: EMBER }
       : { glyph: '✓', color: LAUREL }
 
@@ -93,13 +93,12 @@ type Header = { version: string; model: string; cwd: string }
 // Where the terminal shows pictures, the circles are drawn at full resolution by a helper process
 // (src/pit/daemon.ts): it writes each frame to a file and the terminal reads the file, so no pixel
 // crosses the chat. Elsewhere, or if the helper does not start, block characters draw them.
-type Frame = { file: string; format: 'png'; generation: number }
+type Frame = { file: string; format: 'png'; generation: number; width: number; height: number }
 type Helper = {
   dir: string
-  columns: number
-  rows: number
   said: string
-  frame: Frame | undefined
+  pit: Frame | undefined
+  rule: Frame | undefined
   refused: number
   /** The pane is up and still the picture is not taken: this terminal does not show it. */
   isUseless: boolean
@@ -107,35 +106,43 @@ type Helper = {
 }
 const REFUSED_MOST = 40
 
-async function runHelper($: EngineInterface, helper: Helper, node: string, cell: string | undefined, first: string): Promise<void> {
-  const { width, height, scale } = pitSize(helper.columns, helper.rows, cell)
+async function runHelper($: EngineInterface, helper: Helper, node: string, first: string): Promise<void> {
   let pending = ''
   try {
     await $.fs.write(`${helper.dir}/state.json`, first)
-    const stream = $.process.spawn({
-      argv: [node, `${$.plugin.root}/../dist/pit/daemon.js`, `${helper.dir}/state.json`, `${helper.dir}/frames`, String(width), String(height), String(scale)],
-    })
+    const stream = $.process.spawn({ argv: [node, `${$.plugin.root}/../dist/pit/daemon.js`, `${helper.dir}/state.json`, `${helper.dir}/frames`] })
     for await (const piece of stream) {
       // Leaving the loop ends the process.
       if (helper.isOver) break
       if (piece.stream !== 'stdout') continue
       const heard = readFrames(pending, piece.text)
       pending = heard.rest
-      if (heard.frame === undefined) continue
-      const isFirst = helper.frame === undefined
-      const frame: Frame = { ...heard.frame, format: 'png' }
-      helper.frame = frame
-      if (isFirst) {
-        // From blocks to the picture.
-        $.ui.invalidate('ui.render')
-        continue
+      for (const one of [heard.pit, heard.rule]) {
+        if (one === undefined) continue
+        const before = helper[one.kind]
+        const frame: Frame = { file: one.file, format: 'png', generation: one.generation, width: one.width, height: one.height }
+        helper[one.kind] = frame
+        if (before === undefined || before.width !== frame.width || before.height !== frame.height) {
+          // The first of its size: from blocks to the picture.
+          $.ui.invalidate('ui.render')
+          continue
+        }
+        const source = { file: frame.file, format: frame.format, generation: frame.generation }
+        if (one.kind === 'rule') {
+          await $.ui.blit({ requestId: 'dante-header', key: 'rule', source })
+          continue
+        }
+        const painted = await $.ui.blit({ requestId: 'inferno', key: 'pit', source })
+        helper.refused = painted.deny === undefined ? 0 : helper.refused + 1
+        if (helper.refused > REFUSED_MOST) {
+          helper.refused = 0
+          if ((await $.ui.panes()).some(pane => pane.id === 'inferno' && pane.isPlaced)) {
+            helper.isUseless = true
+            helper.isOver = true
+          }
+        }
       }
-      const painted = await $.ui.blit({ requestId: 'inferno', key: 'pit', source: frame })
-      helper.refused = painted.deny === undefined ? 0 : helper.refused + 1
-      if (helper.refused > REFUSED_MOST) {
-        helper.isUseless = (await $.ui.panes()).some(pane => pane.id === 'inferno' && pane.isPlaced)
-        break
-      }
+      if (helper.isOver) break
     }
   } catch {
     // No node, no file, no terminal: the blocks stay.
@@ -159,6 +166,9 @@ export const register: Register = on => {
   let tasksNow: TaskList = NO_TASKS
   let transfersNow: readonly TransferRow[] = []
   let isWorking = false
+  let turnFrom = 0
+  // Calls that ended well but stopped the request: nothing found, or a dead download.
+  const stopped = new Set<string>()
   let animation: 'full' | 'calm' | 'off' = 'full'
   let motion: Motion = { depth: 0, stars: 0 }
   let seconds = 0
@@ -177,14 +187,29 @@ export const register: Register = on => {
   let helperHome: string | undefined
   let helper: Helper | undefined
   let helpers = 0
-  // The size the pane wants pictures at, and since which beat.
+  // The cells the pane and the header's rule want pictures for, and since which beat.
   let wanted: { columns: number; rows: number; since: number } | undefined
+  let ruleWanted: { columns: number; since: number } | undefined
+  // How many columns the pane takes from the chat while it is docked.
+  let docked = 0
+  const settled: { pit?: { columns: number; rows: number }; rule?: { columns: number } } = {}
+  const sizes = () => {
+    // A size counts once it has held for a moment, so a drag does not rebuild the picture at each step.
+    if (wanted === undefined) settled.pit = undefined
+    else if (settled.pit === undefined || beats - wanted.since > 4) settled.pit = { columns: wanted.columns, rows: wanted.rows }
+    if (ruleWanted === undefined) settled.rule = undefined
+    else if (settled.rule === undefined || beats - ruleWanted.since > 4) settled.rule = { columns: ruleWanted.columns }
+    return {
+      ...(settled.pit === undefined ? {} : { pit: pitSize(settled.pit.columns, settled.pit.rows, cell) }),
+      ...(settled.rule === undefined ? {} : { rule: ruleSize(settled.rule.columns, cell) }),
+    }
+  }
 
   // The five letters and what is cut beside them: the steps of a film, or the share of any other request.
   const marks = (): { title: string; facts: string[]; lit: boolean[]; now: number } => {
     const shown = stop()
     if (shown !== undefined && rehearsal !== undefined) {
-      return { title: 'Night of the Living Dead', facts: shortFacts(factsAt(shown, rehearsal.elapsed)), lit: STEPS.map((_, n) => n < shown.did), now: shown.now }
+      return { title: 'Night of the Living Dead', facts: shortFacts(factsAt(shown, rehearsal.elapsed)), lit: STEPS.map((_, n) => n < shown.did), now: rehearsal.isBroken ? Math.max(0, Math.floor(shown.depth / 2)) : shown.now }
     }
     if (journeyNow !== null) {
       const { title, facts, did, reached, status } = journeyNow
@@ -201,6 +226,9 @@ export const register: Register = on => {
     }
   }
 
+  // Why it stopped.
+  const reason = (): string => (rehearsal?.isBroken === true ? words(lang).example : journeyNow?.status === 'failed' ? journeyNow.reason : '')
+
   // The numbers that move something in the picture.
   const numbers = () => {
     const shown = stop()
@@ -210,49 +238,39 @@ export const register: Register = on => {
 
   const helperState = (): string => {
     const to = target()
-    return JSON.stringify({ depth: to.depth, mood: to.mood, isDone: to.isDone, jump, pace: animation, labels: { circles: words(lang).circles, ...marks(), ...numbers() } })
+    return JSON.stringify({ depth: to.depth, mood: to.mood, isDone: to.isDone, jump, pace: animation, heat: to.mood === 'failed' ? 0.06 : isWorking || rehearsal !== undefined ? 1 : 0.22, labels: { circles: words(lang).circles, ...marks(), ...numbers(), reason: reason() }, ...sizes() })
   }
 
-  // What the helper needs this beat: to start, to be told something, or to stop.
+  // What the helper needs this beat: to start, or to be told something.
   const tend = (): { start?: Helper; tell?: { file: string; text: string } } => {
     if (helper?.isOver === true) {
       // One that never drew anything will not: stay with the blocks.
-      if (helper.frame === undefined || helper.isUseless) isPicture = false
-      else if (helper.refused > REFUSED_MOST) wanted = undefined
+      if (helper.isUseless || (helper.pit === undefined && helper.rule === undefined)) isPicture = false
       helper = undefined
     }
-    if (!isPicture || wanted === undefined || helperHome === undefined) {
+    if (!isPicture || helperHome === undefined || (wanted === undefined && ruleWanted === undefined)) {
       if (helper !== undefined) helper.isOver = true
       return {}
     }
+    const say = helperState()
     if (helper === undefined) {
       helpers += 1
-      helper = { dir: `${helperHome}/pit/${helpers}-${Math.random().toString(36).slice(2, 8)}`, columns: wanted.columns, rows: wanted.rows, said: helperState(), frame: undefined, refused: 0, isUseless: false, isOver: false }
+      helper = { dir: `${helperHome}/pit/${helpers}-${Math.random().toString(36).slice(2, 8)}`, said: say, pit: undefined, rule: undefined, refused: 0, isUseless: false, isOver: false }
       return { start: helper }
     }
-    const isResized = helper.columns !== wanted.columns || helper.rows !== wanted.rows
-    if (isResized) {
-      // Once the pane has held its new size for half a second.
-      if (beats - wanted.since > 5) {
-        helper.isOver = true
-        return { tell: { file: `${helper.dir}/state.json`, text: '{"stop":true}' } }
-      }
-      return {}
-    }
-    const say = helperState()
     if (say === helper.said) return {}
     helper.said = say
     return { tell: { file: `${helper.dir}/state.json`, text: say } }
   }
 
   // The rehearsal: a made-up request to look at the circles with. Never mixed with a real one.
-  let rehearsal: { at: number; elapsed: number; isHeld: boolean } | undefined
+  let rehearsal: { at: number; elapsed: number; isHeld: boolean; isBroken: boolean } | undefined
   let jump = 0
   let isRedrawDue = false
   const stop = (): Stop | undefined => (rehearsal === undefined ? undefined : REHEARSAL[rehearsal.at])
-  const rehearse = (at: number, isHeld: boolean) => {
+  const rehearse = (at: number, isHeld: boolean, isBroken = false) => {
     const bounded = Math.max(0, Math.min(REHEARSAL.length - 1, at))
-    rehearsal = { at: bounded, elapsed: 0, isHeld }
+    rehearsal = { at: bounded, elapsed: 0, isHeld, isBroken }
     jump += 1
     motion = { depth: REHEARSAL[bounded]?.depth ?? 0, stars: 0 }
     isRedrawDue = true
@@ -272,6 +290,7 @@ export const register: Register = on => {
   const target = (): Progress => {
     const shown = stop()
     if (shown !== undefined && rehearsal !== undefined) {
+      if (rehearsal.isBroken) return { depth: Math.max(0, shown.depth), mood: 'failed', isDone: false }
       const percent = shown.isDownload === true ? (factsAt(shown, rehearsal.elapsed).percent ?? 0) : 0
       return { depth: shown.depth + Math.min(0.99, percent / 100), mood: shown.isDone === true ? 'done' : shown.depth < 0 ? 'idle' : 'running', isDone: shown.isDone === true }
     }
@@ -283,7 +302,7 @@ export const register: Register = on => {
       ? undefined
       : toCells(draw(pit, { depth: motion.depth, mood: target().mood, t: seconds, stars: motion.stars }), pit.w, pit.h)
 
-  const ruleCells = (columns: number): string => toCells(drawRule(columns, seconds, isWorking ? 1 : 0.12), columns, 2)
+  const ruleCells = (columns: number): string => drawRule(columns, seconds, target().mood === 'failed' ? 0 : isWorking || rehearsal !== undefined ? 1 : 0.2)
 
   // One beat: move the picture on, and say what needs repainting.
   const beat = (): { pit?: string; rule?: string } => {
@@ -300,7 +319,7 @@ export const register: Register = on => {
         if (rehearsal.elapsed > shown.seconds) rehearsal.elapsed = 0
       } else if (rehearsal.elapsed > shown.seconds) {
         if (rehearsal.at + 1 >= REHEARSAL.length) endRehearsal()
-        else rehearsal = { at: rehearsal.at + 1, elapsed: 0, isHeld: false }
+        else rehearsal = { at: rehearsal.at + 1, elapsed: 0, isHeld: false, isBroken: false }
         isRedrawDue = true
       }
     }
@@ -357,7 +376,7 @@ export const register: Register = on => {
           $.ui.invalidate('ui.render')
         }
         const { start, tell } = tend()
-        if (start !== undefined) void runHelper($, start, node, cell, start.said)
+        if (start !== undefined) void runHelper($, start, node, start.said)
         if (tell !== undefined) void $.fs.write(tell.file, tell.text).catch(() => undefined)
         if (due.pit !== undefined) {
           void $.ui
@@ -406,12 +425,13 @@ export const register: Register = on => {
 
   on('command.run', { command: 'inferno' }, async ($, e) => {
     const asked = e.args.trim().toLowerCase()
-    const circle = /^[1-9]$/.test(asked) ? Number(asked) : undefined
+    const broken = /^error(?:\s+([1-9]))?$/.exec(asked)
+    const circle = /^[1-9]$/.test(asked) ? Number(asked) : broken !== null ? Number(broken[1] ?? 5) : undefined
     if (asked === 'demo' || circle !== undefined) {
       await $.store.set('pane', 'open')
       await $.ui.open({ id: PANE_ID, title: 'Inferno', columns: PANE_COLUMNS })
       if (circle === undefined) rehearse(0, false)
-      else rehearse(stopOf(circle), true)
+      else rehearse(stopOf(circle), true, broken !== null)
       return { text: words(lang).rehearsing }
     }
     if (asked === 'stop') {
@@ -424,6 +444,7 @@ export const register: Register = on => {
       await $.store.set('pane', 'closed')
       isPitUp = false
       wanted = undefined
+      docked = 0
       return { text: words(lang).paneClosed }
     }
     await $.store.set('pane', 'open')
@@ -435,6 +456,8 @@ export const register: Register = on => {
   on('ui.close', { id: 'inferno' }, async ($, e, next) => {
     isPitUp = false
     wanted = undefined
+    docked = 0
+    $.ui.invalidate('ui.render')
     if (e.origin.kind === 'person') await $.store.set('pane', 'closed')
     return next(e)
   })
@@ -442,14 +465,17 @@ export const register: Register = on => {
   // A new request: what was finished (or failed) is put away.
   on('prompt.submit', async ($, e, next) => {
     if (!e.text.startsWith('/')) endRehearsal()
-    journeyNow = await update($, journeyAtom, j => (j !== null && j.endedAt !== null ? null : j))
+    journeyNow = await update($, journeyAtom, j => (j !== null && j.endedAt !== null && j.status !== 'failed' ? null : j))
     const { total, done } = tally()
     if (total > 0 && done === total) tasksNow = await update($, tasksAtom, () => NO_TASKS)
     return next(e)
   })
 
-  on('turn.start', ($, e, next) => {
-    if (e.agentId === undefined) isWorking = true
+  on('turn.start', async ($, e, next) => {
+    if (e.agentId === undefined) {
+      isWorking = true
+      turnFrom = await $.clock.now()
+    }
     return next(e)
   })
 
@@ -480,9 +506,11 @@ export const register: Register = on => {
       const now = await $.clock.now()
       const title = titleOf(tool, e)
       journeyNow = await update($, journeyAtom, j => {
-        const isFresh = j === null || j.endedAt !== null || tool === 'find_title'
-        const base: Journey = isFresh ? { title: title ?? '', reached, status: 'running', startedAt: now, endedAt: null, did: [], facts: {} } : j
-        return { ...base, title: title ?? base.title, reached, status: 'running', endedAt: null }
+        // After a failure the same request may go on; another title is another request.
+        const isOther = j !== null && j.status === 'failed' && title !== undefined && j.title !== '' && title !== j.title
+        const isFresh = j === null || (j.endedAt !== null && j.status !== 'failed') || isOther || tool === 'find_title'
+        const base: Journey = isFresh ? { title: title ?? '', reached, status: 'running', startedAt: now, endedAt: null, did: [], facts: {}, reason: '', fault: null, transfer: null } : j
+        return { ...base, title: title ?? base.title, reached, status: 'running', endedAt: null, reason: '', fault: null }
       })
       if (stopTicking === undefined) {
         const timer = $.clock.every(1000, () => void update($, tickAtom, t => (t ?? 0) + 1))
@@ -506,20 +534,32 @@ export const register: Register = on => {
     if (step !== undefined && !isPending) {
       const now = await $.clock.now()
       const reached = STEPS.indexOf(step)
-      const status: Journey['status'] = hasFailed ? 'failed' : 'done'
-      const found = hasFailed ? {} : factsFrom(tool, e, outputText(ran.result ?? ran.text))
+      const answer = ran.deny === undefined ? outputText(ran.result ?? ran.text) : ''
+      const found = hasFailed ? {} : factsFrom(tool, e, answer)
+      const added = tool === 'add_to_debrid' && !hasFailed ? parseTransfers(tool, answer).at(-1) : undefined
+      // Nothing found is the end of the way too, and so is a download that will not finish.
+      const isEmpty = !hasFailed && ((tool === 'search_streams' && found.results === 0) || (tool === 'find_title' && /^No title found/.test(answer)))
+      const isDead = added !== undefined && isBroken(added)
+      // A person's no stops the request, but nothing is wrong.
+      const isRefused = ran.deny !== undefined || (hasFailed && isRefusal(answer))
+      const isStopped = !isRefused && (hasFailed || isEmpty || isDead)
+      if (isStopped && !hasFailed) stopped.add(e.tool_use_id)
+      const why = !isStopped ? '' : isEmpty ? reasonOf(enginesThatFailed(answer)) || words(lang).nothing : isDead ? reasonOf(added.status) : reasonOf(answer) || words(lang).failed
       journeyNow = await update($, journeyAtom, j =>
         j === null || j.reached !== reached
           ? j
           : {
               ...j,
-              status,
-              endedAt: step === 'play' || hasFailed ? now : null,
-              did: hasFailed || j.did.includes(step) ? j.did : [...j.did, step],
+              status: isStopped ? 'failed' : isRefused ? 'running' : 'done',
+              endedAt: (step === 'play' && !isRefused) || isStopped ? now : null,
+              did: isStopped || isRefused || j.did.includes(step) ? j.did : [...j.did, step],
               facts: { ...j.facts, ...found },
+              reason: why,
+              fault: isStopped ? faultAt(tool, answer, isEmpty) : null,
+              transfer: added === undefined ? j.transfer : `${added.service} ${added.id}`,
             },
       )
-      if (step === 'play' || hasFailed) {
+      if (step === 'play' || isStopped) {
         stopTicking?.()
         stopTicking = undefined
       }
@@ -530,7 +570,15 @@ export const register: Register = on => {
       if (rows.length && step === undefined) {
         // How the download goes: no step of its own, but the request's own number.
         const found = factsFrom(tool, e, outputText(ran.result ?? ran.text))
-        journeyNow = await update($, journeyAtom, j => (j === null ? j : { ...j, facts: { ...j.facts, ...found } }))
+        const now = await $.clock.now()
+        journeyNow = await update($, journeyAtom, j => {
+          if (j === null) return j
+          // Of all the downloads there, only the one this request added can stop it.
+          const own = rows.find(row => `${row.service} ${row.id}` === j.transfer)
+          const isDead = own !== undefined && isBroken(own) && j.status !== 'failed'
+          const gone = isDead ? { status: 'failed' as const, endedAt: now, reason: reasonOf(own.status), fault: 6, did: j.did.filter(done => done !== 'add') } : {}
+          return { ...j, facts: { ...j.facts, ...found }, ...gone }
+        })
       }
       if (rows.length) {
         transfersNow = await update($, transfersAtom, list => {
@@ -545,6 +593,8 @@ export const register: Register = on => {
   on('turn.complete', async ($, e, next) => {
     if (e.agentId === undefined) {
       isWorking = false
+      // A failure is shown until a whole turn has gone by without it.
+      journeyNow = await update($, journeyAtom, j => (j !== null && j.status === 'failed' && (j.endedAt ?? 0) < turnFrom ? null : j))
       stopTicking?.()
       stopTicking = undefined
     }
@@ -598,14 +648,21 @@ export const register: Register = on => {
     }
     // Pinned: exactly HEADER_ROWS tall, closed by a rule of coals the chat scrolls under. It burns
     // while Dante works.
-    // The slot is as wide as the terminal, but with a pane docked the viewport is the chat's: draw
-    // the rule at its widest and let the slot cut it.
-    const width = RULE_COLUMNS
-    ruleColumns = width
+    // The slot is as wide as the terminal; with a pane docked the viewport is the chat's alone.
+    const across = Math.max(1, Math.min(RULE_COLUMNS, (e.viewport?.columns ?? 80) + docked))
+    if (isPicture && (ruleWanted === undefined || ruleWanted.columns !== across)) ruleWanted = { columns: across, since: beats }
+    const size = ruleSize(across, cell)
+    const drawn = isPicture ? helper?.rule : undefined
+    const burning = drawn !== undefined && drawn.width === size.width && drawn.height === size.height ? drawn : undefined
+    ruleColumns = burning === undefined ? RULE_COLUMNS : 0
     return (
       <Box flexDirection="column" height={HEADER_ROWS} overflow="hidden">
         {identity}
-        <Raster key="rule" columns={width} rows={1} cells={ruleCells(width)} />
+        {burning === undefined ? (
+          <Raster key="rule" columns={RULE_COLUMNS} rows={1} cells={ruleCells(RULE_COLUMNS)} />
+        ) : (
+          <Image key="rule" source={{ file: burning.file, format: burning.format, generation: burning.generation }} columns={across} rows={1} alt=" " />
+        )}
       </Box>
     )
   })
@@ -629,7 +686,15 @@ export const register: Register = on => {
     else if (pit === undefined || pit.w !== columns || pit.h !== rows * 2) pit = makeScene(columns, rows * 2)
     if (!fits) wanted = undefined
     else if (wanted === undefined || wanted.columns !== columns || wanted.rows !== rows) wanted = { columns, rows, since: beats }
-    const picture = isPicture && fits && helper?.columns === columns && helper.rows === rows ? helper.frame : undefined
+    const taken = e.props.placement === 'dock' ? e.props.bodyColumns + 1 : 0
+    if (taken !== docked) {
+      // The rule under the header is as wide as the chat and this pane together.
+      docked = taken
+      isRedrawDue = true
+    }
+    const size = pitSize(columns, rows, cell)
+    const drawn = isPicture && fits ? helper?.pit : undefined
+    const picture = drawn !== undefined && drawn.width === size.width && drawn.height === size.height ? drawn : undefined
     const cells = picture === undefined ? pitCells() : undefined
     isPitUp = cells !== undefined
     if (animation === 'off') motion = { depth: to.depth, stars: to.isDone ? 1 : 0 }
@@ -645,22 +710,28 @@ export const register: Register = on => {
     const shown = stop()
     const line =
       shown !== undefined && rehearsal !== undefined
-        ? shown.isDone === true
-          ? w.verseEnd
-          : w.found(factsAt(shown, rehearsal.elapsed), shown.did > 0 ? 'Night of the Living Dead' : '').filter(Boolean).join(' · ') || w.circle(Math.max(0, Math.floor(shown.depth)))
+        ? rehearsal.isBroken
+          ? `${w.failed}: ${w.example}`
+          : shown.isDone === true
+            ? w.verseEnd
+            : w.found(factsAt(shown, rehearsal.elapsed), shown.did > 0 ? 'Night of the Living Dead' : '').filter(Boolean).join(' · ') || w.circle(Math.max(0, Math.floor(shown.depth)))
         : to.isDone
           ? w.verseEnd
-          : said.filter(Boolean).join(' · ')
+          : journey?.status === 'failed'
+            ? `${w.steps[STEPS[journey.reached] ?? 'title']}: ${journey.reason || w.failed}`
+            : said.filter(Boolean).join(' · ')
     return (
       <Box flexDirection="column">
-        {picture === undefined ? null : <Image key="pit" source={picture} columns={columns} rows={rows} alt="Inferno" />}
+        {picture === undefined ? null : <Image key="pit" source={{ file: picture.file, format: picture.format, generation: picture.generation }} columns={columns} rows={rows} alt="Inferno" />}
         {cells === undefined ? null : <Raster key="pit" columns={columns} rows={rows} cells={cells} />}
-        <Text color={journey?.status === 'failed' ? EMBER : GOLD}>{truncate(line, columns)}</Text>
+        <Text color={to.mood === 'failed' ? EMBER : GOLD} wrap={to.mood === 'failed' && rehearsal === undefined ? 'wrap' : 'truncate-end'}>
+          {truncate(line, to.mood === 'failed' && rehearsal === undefined ? columns * CAPTION_ROWS - 8 : columns)}
+        </Text>
         {rehearsal === undefined ? null : (
           <Box flexDirection="row">
             <Text dimColor>{truncate(w.rehearsal(rehearsal.at + 1, REHEARSAL.length), Math.max(10, columns - 18))} </Text>
-            <Button key="back" label="‹" hotkey="a" onPress={() => rehearse((rehearsal?.at ?? 1) - 1, true)} />
-            <Button key="on" label="›" hotkey="s" onPress={() => rehearse((rehearsal?.at ?? -1) + 1, true)} />
+            <Button key="back" label="‹" hotkey="a" onPress={() => rehearse((rehearsal?.at ?? 1) - 1, true, rehearsal?.isBroken)} />
+            <Button key="on" label="›" hotkey="s" onPress={() => rehearse((rehearsal?.at ?? -1) + 1, true, rehearsal?.isBroken)} />
             <Button key="end" label="✕" hotkey="x" onPress={endRehearsal} />
           </Box>
         )}
@@ -701,7 +772,7 @@ export const register: Register = on => {
     const tool = danteTool(e.props.tool)
     if (e.surface !== 'terminal' || e.props.isExpanded || tool === undefined) return next(e)
     const { Box, Text } = $.ui.resolve(e)
-    const mark = markOf(e.props)
+    const mark = markOf(e.props, stopped)
     const verb = words(lang).verbs[tool] ?? tool
     const width = Math.max(20, (e.viewport?.columns ?? 80) - 16)
     return (
@@ -730,7 +801,7 @@ export const register: Register = on => {
       <Box flexDirection="column">
         {e.props.calls.map((call, i) => {
           const tool = danteTool(call.tool)
-          const mark = markOf(call)
+          const mark = markOf(call, stopped)
           const verb = tool === undefined ? genericLabel(call.tool) : (words(lang).verbs[tool] ?? tool)
           const target = tool === undefined ? '' : targetOf(tool, call.input, lang)
           return (

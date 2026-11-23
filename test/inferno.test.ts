@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { CIRCLES, draw, drawRule, makeScene, PALETTE, toCells, type Mood } from '../plugin/hooks/inferno'
-import { declaredSteps, downloadOf, factsFrom, isDub, pitSize, shortFacts, readFrames, targetOf, taskChange } from '../plugin/hooks/parse'
+import { declaredSteps, downloadOf, enginesThatFailed, factsFrom, faultAt, isBroken, isDub, isRefusal, parseTransfers, pitSize, readFrames, reasonOf, ruleSize, shortFacts, targetOf, taskChange } from '../plugin/hooks/parse'
 import { advance, factsAt, isSettled, progressOf, REHEARSAL, stopOf } from '../plugin/hooks/progress'
 import { words } from '../plugin/hooks/words'
 import type { Journey } from '../plugin/types'
 
-const journey = (reached: number, status: Journey['status']): Journey => ({ title: 'X', reached, status, startedAt: 0, endedAt: null, did: [], facts: {} })
+const journey = (reached: number, status: Journey['status']): Journey => ({ title: 'X', reached, status, startedAt: 0, endedAt: null, did: [], facts: {}, reason: '', fault: null, transfer: null })
 const none = { total: 0, done: 0 }
 
 describe('progress down the circles', () => {
@@ -134,7 +134,9 @@ describe('the drawing', () => {
     expect(bytes).toHaveLength(2 * 12)
     expect([0, 4, 8].map(o => bytes.readUInt32LE(o))).toEqual([0x2580, PALETTE[8], PALETTE[0]])
     expect([12, 16, 20].map(o => bytes.readUInt32LE(o))).toEqual([0x2580, PALETTE[11], PALETTE[17]])
-    expect(drawRule(80, 1, 1)).toHaveLength(160)
+    const rule = Buffer.from(drawRule(80, 1, 1), 'base64')
+    expect(rule).toHaveLength(80 * 12)
+    for (let x = 0; x < 80; x++) expect([0x2581, 0x2582, 0x2583, 0x2584, 0x2585, 0x2586, 0x2587, 0x2588]).toContain(rule.readUInt32LE(x * 12))
   })
 
   it('draws the figures lower on the canvas the further down they are', () => {
@@ -173,14 +175,61 @@ describe('what each step found', () => {
   })
 })
 
+describe('where it stopped', () => {
+  it('breaks the circle the failure belongs to', () => {
+    expect(faultAt('find_title', 'No title found for "x"', true)).toBe(0)
+    expect(faultAt('search_streams', 'Error: torrentio: HTTP 500', false)).toBe(1)
+    expect(faultAt('search_streams', 'X: 0 results after ranking, from no engine.\nEngines that failed: jackett: fetch failed', true)).toBe(2)
+    expect(reasonOf(enginesThatFailed('X: 0 results after ranking, from no engine.\nEngines that failed: jackett: fetch failed\nNothing matched.'))).toBe('jackett: fetch failed')
+    expect(enginesThatFailed('X: 0 results after ranking, from torrentio (0).')).toBe('')
+    expect(faultAt('search_streams', 'X: 0 results after ranking, from torrentio (0).\nNothing matched.', true)).toBe(3)
+    expect(faultAt('check_cache', 'Error: AllDebrid: timed out', false)).toBe(4)
+    expect(faultAt('check_cache', 'Error: AllDebrid: The auth apikey is invalid', false)).toBe(5)
+    expect(faultAt('add_to_debrid', 'Error: Real-Debrid: the account is not premium', false)).toBe(5)
+    expect(faultAt('add_to_debrid', 'Error: AllDebrid: too many magnets', false)).toBe(6)
+    expect(faultAt('get_links', 'Error: no playable file in X', false)).toBe(7)
+    expect(faultAt('play', 'Error: mpv not found', false)).toBe(8)
+  })
+
+  it('tells a download that will not finish from one that has not finished yet', () => {
+    const rows = parseTransfers('debrid_status', 'alldebrid 1  Downloading 42%  A\nalldebrid 2  No peer after 30 minutes 0%  B\nrealdebrid 3  magnet_error  C\nalldebrid 4  ready  Dead Ringers')
+    expect(rows.map(isBroken)).toEqual([false, true, true, false])
+    expect(rows[0]!.status).toBe('42%')
+    expect(rows[1]!.status).toBe('No peer after 30 minutes')
+    expect(downloadOf(rows.slice(0, 1))).toBe(0.42)
+  })
+
+  it('does not take a person saying no for a fault', () => {
+    expect(isRefusal("The user doesn't want to proceed with this tool use. The tool use was rejected")).toBe(true)
+    expect(isRefusal('Error: AllDebrid: HTTP 403')).toBe(false)
+  })
+})
+
+describe('why it stopped', () => {
+  it('is the tool own first line, without addresses, keys or paths', () => {
+    expect(reasonOf('Error: AllDebrid: AUTH_BAD_APIKEY: The auth apikey is invalid')).toBe('AllDebrid: AUTH_BAD_APIKEY: The auth apikey is invalid')
+    expect(reasonOf('\nError: https://x.example/CONFIGWITHKEY123/stream: timed out')).toBe('… timed out')
+    expect(reasonOf('Error: bad token Zx81kq77ab09cd21ef in /Users/someone/Dante/dante.toml')).toBe('bad token … in …')
+    expect(reasonOf('a'.repeat(300)).length).toBeLessThanOrEqual(100)
+    expect(reasonOf('')).toBe('')
+  })
+})
+
 describe('pictures from the helper', () => {
   it('reads whole lines only, and keeps the newest frame', () => {
-    expect(readFrames('', 'pit /a/pit0.png 1\npit /a/pit1.png 2\npit /a/pi')).toEqual({ rest: 'pit /a/pi', frame: { file: '/a/pit1.png', generation: 2 } })
-    expect(readFrames('pit /a/pi', 't2.png 3\n')).toEqual({ rest: '', frame: { file: '/a/pit2.png', generation: 3 } })
-    expect(readFrames('', 'noise\n').frame).toBeUndefined()
+    const heard = readFrames('', 'pit /a/pit0.png 1 322x792\nrule /a/rule0.png 1 1190x18\npit /a/pit1.png 2 322x792\npit /a/pi')
+    expect(heard).toEqual({
+      rest: 'pit /a/pi',
+      pit: { kind: 'pit', file: '/a/pit1.png', generation: 2, width: 322, height: 792 },
+      rule: { kind: 'rule', file: '/a/rule0.png', generation: 1, width: 1190, height: 18 },
+    })
+    expect(readFrames('pit /a/pi', 't2.png 3 4x5\n').pit?.file).toBe('/a/pit2.png')
+    expect(readFrames('', 'noise\n')).toEqual({ rest: '' })
   })
 
   it('fits the pane exactly, with pixels of a similar size on any screen', () => {
+    expect(ruleSize(190, '7x18')).toEqual({ width: 1330, height: 18, scale: 1 })
+    expect(ruleSize(190, '15x36')).toEqual({ width: 2850, height: 36, scale: 2 })
     expect(pitSize(46, 44, '7x18')).toEqual({ width: 322, height: 792, scale: 2 })
     expect(pitSize(46, 44, '15x36')).toEqual({ width: 690, height: 1584, scale: 4 })
     expect(pitSize(46, 44, '')).toEqual({ width: 368, height: 704, scale: 2 })
