@@ -136,7 +136,7 @@ describe('the drawing', () => {
     expect([12, 16, 20].map(o => bytes.readUInt32LE(o))).toEqual([0x2580, PALETTE[11], PALETTE[17]])
     const rule = Buffer.from(drawRule(80, 1, 1), 'base64')
     expect(rule).toHaveLength(80 * 12)
-    for (let x = 0; x < 80; x++) expect([0x2581, 0x2582, 0x2583, 0x2584, 0x2585, 0x2586, 0x2587, 0x2588]).toContain(rule.readUInt32LE(x * 12))
+    for (let x = 0; x < 80; x++) expect([0x2594, 0x2580, 0x2588]).toContain(rule.readUInt32LE(x * 12))
   })
 
   it('draws the figures lower on the canvas the further down they are', () => {

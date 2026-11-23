@@ -1,5 +1,5 @@
-// The burning rule under the header: a bed of coals as wide as the terminal, with flames while
-// Dante works. Pixels are palette indexes; CLEAR ones let the terminal through.
+// The burning rule under the header: a bed of coals as wide as the terminal, and flames hanging from
+// it while Dante works. Pixels are palette indexes; CLEAR ones let the terminal through.
 import { FLAME, SPOT } from './palette.js'
 import { cloud, noise } from './scene.js'
 
@@ -35,22 +35,22 @@ export class Rule {
       const swell = cloud(x / 34 - t * 0.12, t * 0.35, 120)
       const tongue = cloud(x / 6.5 + t * 0.25, t * 1.5, 121)
       const tall = h * warmth * (0.16 + swell * 0.62 + tongue * 0.6)
-      for (let up = 0; up < h; up++) {
-        const left = 1 - up / Math.max(0.5, tall)
+      for (let down = 0; down < h; down++) {
+        const left = 1 - down / Math.max(0.5, tall)
         if (left < -0.45) break
-        // The flame licks: noise that rises through it, narrower the higher it gets.
-        const lick = cloud(x / 4.2 + Math.sin(t * 1.3 + x * 0.05) * 0.6, up / 5.5 - t * 4.2, 122)
-        const heat = left * 0.72 + (lick - 0.5) * (0.62 + (up / h) * 0.5)
+        // The flame licks: noise that runs down through it, narrower the further it gets.
+        const lick = cloud(x / 4.2 + Math.sin(t * 1.3 + x * 0.05) * 0.6, down / 5.5 - t * 4.2, 122)
+        const heat = left * 0.72 + (lick - 0.5) * (0.62 + (down / h) * 0.5)
         if (heat <= 0.05) continue
         const step = Math.floor(Math.min(0.999, heat * (0.28 + warmth * 0.72)) * colors.length)
-        px[(h - 1 - up) * w + x] = colors[step]!
+        px[down * w + x] = colors[step]!
       }
       // The coals themselves never quite go out.
       const glow = cloud(x / 5, t * 0.6, 123) * 0.8 + noise(x, 1, Math.floor(t * 2 + noise(x, 2, 124))) * 0.2
       const coal = Math.max(0, Math.min(3, Math.floor(glow * 4.4 * (0.45 + Math.min(1, warmth * 2.4) * 0.55))))
-      for (let up = 0; up < (h > 12 ? 2 : 1); up++) {
-        const k = (h - 1 - up) * w + x
-        if (px[k] === CLEAR) px[k] = up === 0 || glow > 0.55 ? colors[Math.max(0, coal - up)]! : CLEAR
+      for (let down = 0; down < (h > 12 ? 2 : 1); down++) {
+        const k = down * w + x
+        if (px[k] === CLEAR) px[k] = down === 0 || glow > 0.55 ? colors[Math.max(0, coal - down)]! : CLEAR
       }
     }
     return px

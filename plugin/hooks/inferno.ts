@@ -373,7 +373,10 @@ export function toCells(px: Uint8Array, w: number, h: number): string {
   return base64(bytes)
 }
 
-/** The burning rule under the header where there are no pictures: one cell tall, flames in eighths. */
+/**
+ * The burning rule under the header where there are no pictures: one cell tall, the flames hanging
+ * from its top edge. Blocks that hang come in three sizes only: an eighth, a half and the whole cell.
+ */
 export function drawRule(w: number, t: number, heat: number): string {
   const bytes = new Uint8Array(w * 12)
   const view = new DataView(bytes.buffer)
@@ -382,7 +385,7 @@ export function drawRule(w: number, t: number, heat: number): string {
     const lick = noise(x, 2, Math.floor(t * 8))
     const tall = Math.max(1, Math.min(8, Math.round(1 + heat * (swell * 4 + lick * 4))))
     const color = heat <= 0 ? C.robeDark : tall > 6 ? C.yellow : tall > 4 ? C.orange : tall > 2 || heat > 0.5 ? C.ember : noise(x, 3, Math.floor(t * 2)) < 0.3 ? C.ember : C.robeDark
-    view.setUint32(x * 12, 0x2580 + tall, true)
+    view.setUint32(x * 12, tall > 6 ? 0x2588 : tall > 2 ? 0x2580 : 0x2594, true)
     view.setUint32(x * 12 + 4, PALETTE[color]!, true)
     view.setUint32(x * 12 + 8, 0x01000000, true)
   }

@@ -227,6 +227,20 @@ describe('the burning rule', () => {
   })
 })
 
+describe('the way the rule burns', () => {
+  it('hangs from a straight edge at the top, with the tips of the flames below', () => {
+    const rule = new Rule(400, 18)
+    const rows = new Array<number>(18).fill(0)
+    for (let i = 0; i < 120; i++) {
+      const px = rule.frame(1, 0.1)
+      if (i >= 40) for (let k = 0; k < px.length; k++) rows[Math.floor(k / 400)]! += px[k] === CLEAR ? 0 : 1
+    }
+    expect(rows[0]).toBe(400 * 80)
+    for (let y = 1; y < 18; y++) expect(rows[y]).toBeLessThanOrEqual(rows[y - 1]!)
+    expect(rows[17]).toBeLessThan(rows[0]! * 0.5)
+  })
+})
+
 describe('which terminals get pictures', () => {
   it('kitty and Ghostty, unless inside tmux or over ssh, and whatever the settings force', () => {
     expect(drawsPictures('auto', { TERM_PROGRAM: 'ghostty' })).toBe(true)
