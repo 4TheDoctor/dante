@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { CIRCLES, draw, drawRule, makeScene, PALETTE, toCells, type Mood } from '../plugin/hooks/inferno'
-import { declaredSteps, downloadOf, enginesThatFailed, factsFrom, faultAt, isBroken, isDub, isRefusal, parseTransfers, pitSize, readFrames, reasonOf, ruleSize, shortFacts, targetOf, taskChange } from '../plugin/hooks/parse'
+import { declaredSteps, downloadOf, enginesThatFailed, factsFrom, faultAt, isBroken, isDub, isRefusal, parseTransfers, pitSize, readFrames, reasonOf, ruleParts, ruleSize, shortFacts, targetOf, taskChange } from '../plugin/hooks/parse'
 import { advance, factsAt, isSettled, progressOf, REHEARSAL, stopOf } from '../plugin/hooks/progress'
 import { words } from '../plugin/hooks/words'
 import type { Journey } from '../plugin/types'
@@ -225,6 +225,19 @@ describe('pictures from the helper', () => {
     })
     expect(readFrames('pit /a/pi', 't2.png 3 4x5\n').pit?.file).toBe('/a/pit2.png')
     expect(readFrames('', 'noise\n')).toEqual({ rest: '' })
+  })
+
+  it('cuts the rule in pictures no wider than the 255 columns one may take', () => {
+    expect(ruleParts(80)).toEqual([80])
+    expect(ruleParts(255)).toEqual([255])
+    expect(ruleParts(256)).toEqual([255, 1])
+    expect(ruleParts(300)).toEqual([255, 45])
+    // As wide as it gets: two of them.
+    expect(ruleParts(9999)).toEqual([255, 255])
+    expect(ruleParts(0)).toEqual([1])
+    const heard = readFrames('', 'rule /a/rule0.png 7 1785x18\nrule2 /a/rule20.png 7 315x18\n')
+    expect(heard.rule?.width).toBe(1785)
+    expect(heard.rule2).toEqual({ kind: 'rule2', file: '/a/rule20.png', generation: 7, width: 315, height: 18 })
   })
 
   it('fits the pane exactly, with pixels of a similar size on any screen', () => {

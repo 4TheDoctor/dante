@@ -7,9 +7,11 @@
 //
 // state.json, rewritten by the mod as the request moves on:
 //   { depth, mood, isDone, labels, jump, pace: "full" | "calm" | "off",
-//     pit?: { width, height, scale }, rule?: { width, height, scale }, heat, stop? }
-// Sizes are screen pixels; scale is how many of them one pixel of the drawing takes.
-// Output: one line per frame, `pit <absolute path> <number> <width>x<height>`, and `rule …` alike.
+//     pit?: { width, height, scale }, rule?: { width, height, scale, parts? }, heat, stop? }
+// Sizes are screen pixels; scale is how many of them one pixel of the drawing takes. A picture may
+// not be wider than 255 cells, so a longer rule comes in the two `parts`, whose widths add up to it.
+// Output: one line per picture, `pit <absolute path> <number> <width>x<height>`, and alike `rule …`
+// and, for its second part, `rule2 …`.
 import { mkdirSync, readFileSync, renameSync, rmdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { encodePng } from './png.js'
@@ -22,13 +24,20 @@ interface Size {
   scale: number
 }
 
+interface RuleSize extends Size {
+  /** The width of each of its pictures, left to right. */
+  parts?: number[]
+}
+
+type Kind = 'pit' | 'rule' | 'rule2'
+
 interface State extends Goal {
   labels?: Labels
   pace: 'full' | 'calm' | 'off'
   /** Changes when they are to be put at `depth` at once. */
   jump?: number
   pit?: Size
-  rule?: Size
+  rule?: RuleSize
   /** Of the rule: 1 burns, about 0.2 glows, 0 is out. */
   heat?: number
   stop?: boolean
@@ -54,7 +63,7 @@ const isSize = (size: Size | undefined): size is Size =>
 const parent = process.ppid
 let state: State = { depth: -1, mood: 'idle', isDone: false, pace: 'full' }
 let pit: { size: Size; scene: Pit; count: number } | undefined
-let rule: { size: Size; bed: Rule; count: number } | undefined
+let rule: { size: RuleSize; bed: Rule; count: number } | undefined
 let mtime = -1
 let seenAt = Date.now()
 let changed = true
@@ -63,7 +72,7 @@ let rested = 0
 let last = Date.now()
 
 function leave(): never {
-  for (const kind of ['pit', 'rule']) for (let n = 0; n < FILES; n++) rmSync(join(out, `${kind}${n}.png`), { force: true })
+  for (const kind of ['pit', 'rule', 'rule2'] satisfies Kind[]) for (let n = 0; n < FILES; n++) rmSync(join(out, `${kind}${n}.png`), { force: true })
   rmSync(statePath, { force: true })
   try {
     rmdirSync(out)
@@ -117,7 +126,7 @@ function reload(): void {
   }
 }
 
-function emit(kind: 'pit' | 'rule', count: number, size: Size, png: Buffer): void {
+function emit(kind: Kind, count: number, size: { width: number; height: number }, png: Buffer): void {
   const file = join(out, `${kind}${count % FILES}.png`)
   writeFileSync(`${file}.tmp`, png)
   renameSync(`${file}.tmp`, file)
@@ -133,7 +142,13 @@ function paintPit(dt: number): void {
 function paintRule(dt: number): void {
   if (rule === undefined) return
   const { bed, size } = rule
-  emit('rule', rule.count++, size, encodePng(bed.frame(state.heat ?? 0, dt), bed.w, bed.h, size.scale, size.width, size.height, CLEAR))
+  const px = bed.frame(state.heat ?? 0, dt)
+  const count = rule.count++
+  let left = 0
+  for (const [n, width] of (size.parts ?? [size.width]).slice(0, 2).entries()) {
+    emit(n === 0 ? 'rule' : 'rule2', count, { width, height: size.height }, encodePng(px, bed.w, bed.h, size.scale, width, size.height, CLEAR, left))
+    left += width
+  }
 }
 
 function tick(): void {

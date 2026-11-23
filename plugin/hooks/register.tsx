@@ -3,7 +3,7 @@ import type { EngineInterface, Register } from 'claude-code'
 
 import type { Journey, TaskList, TransferRow } from '../types'
 import { draw, drawRule, makeScene, toCells, type Scene } from './inferno'
-import { danteTool, declaredSteps, downloadOf, enginesThatFailed, factsFrom, faultAt, isBroken, isDub, isRefusal, outputText, parseTransfers, pitSize, readFrames, reasonOf, ruleSize, shortFacts, STEP_OF, targetOf, taskChange, titleOf } from './parse'
+import { danteTool, declaredSteps, downloadOf, enginesThatFailed, factsFrom, faultAt, FRAME_KINDS, isBroken, isDub, isRefusal, outputText, parseTransfers, pitSize, readFrames, reasonOf, RULE_MOST, ruleParts, ruleSize, shortFacts, STEP_OF, targetOf, taskChange, titleOf } from './parse'
 import { advance, factsAt, isSettled, progressOf, REHEARSAL, stopOf, type Motion, type Progress, type Scene as Stop } from './progress'
 import { DANTE, STEPS, words, type Lang } from './words'
 
@@ -31,7 +31,7 @@ const PANE_ID = 'inferno'
 const PANE_COLUMNS = 46
 const CAPTION_ROWS = 2
 /** The widest a Raster may be. */
-const RULE_COLUMNS = 512
+const RULE_COLUMNS = RULE_MOST
 const BEAT_MS = 100
 /** With nothing happening for this long, the picture stands still. */
 const REST_AFTER_S = 300
@@ -99,6 +99,8 @@ type Helper = {
   said: string
   pit: Frame | undefined
   rule: Frame | undefined
+  /** What of the rule does not fit in one picture. */
+  rule2: Frame | undefined
   refused: number
   /** The pane is up and still the picture is not taken: this terminal does not show it. */
   isUseless: boolean
@@ -117,7 +119,7 @@ async function runHelper($: EngineInterface, helper: Helper, node: string, first
       if (piece.stream !== 'stdout') continue
       const heard = readFrames(pending, piece.text)
       pending = heard.rest
-      for (const one of [heard.pit, heard.rule]) {
+      for (const one of FRAME_KINDS.map(kind => heard[kind])) {
         if (one === undefined) continue
         const before = helper[one.kind]
         const frame: Frame = { file: one.file, format: 'png', generation: one.generation, width: one.width, height: one.height }
@@ -128,8 +130,8 @@ async function runHelper($: EngineInterface, helper: Helper, node: string, first
           continue
         }
         const source = { file: frame.file, format: frame.format, generation: frame.generation }
-        if (one.kind === 'rule') {
-          await $.ui.blit({ requestId: 'dante-header', key: 'rule', source })
+        if (one.kind !== 'pit') {
+          await $.ui.blit({ requestId: 'dante-header', key: one.kind, source })
           continue
         }
         const painted = await $.ui.blit({ requestId: 'inferno', key: 'pit', source })
@@ -255,7 +257,7 @@ export const register: Register = on => {
     const say = helperState()
     if (helper === undefined) {
       helpers += 1
-      helper = { dir: `${helperHome}/pit/${helpers}-${Math.random().toString(36).slice(2, 8)}`, said: say, pit: undefined, rule: undefined, refused: 0, isUseless: false, isOver: false }
+      helper = { dir: `${helperHome}/pit/${helpers}-${Math.random().toString(36).slice(2, 8)}`, said: say, pit: undefined, rule: undefined, rule2: undefined, refused: 0, isUseless: false, isOver: false }
       return { start: helper }
     }
     if (say === helper.said) return {}
@@ -651,17 +653,24 @@ export const register: Register = on => {
     // The slot is as wide as the terminal; with a pane docked the viewport is the chat's alone.
     const across = Math.max(1, Math.min(RULE_COLUMNS, (e.viewport?.columns ?? 80) + docked))
     if (isPicture && (ruleWanted === undefined || ruleWanted.columns !== across)) ruleWanted = { columns: across, since: beats }
-    const size = ruleSize(across, cell)
-    const drawn = isPicture ? helper?.rule : undefined
-    const burning = drawn !== undefined && drawn.width === size.width && drawn.height === size.height ? drawn : undefined
-    ruleColumns = burning === undefined ? RULE_COLUMNS : 0
+    const burning = ruleParts(across).flatMap((columns, n) => {
+      const size = ruleSize(columns, cell)
+      const drawn = !isPicture ? undefined : n === 0 ? helper?.rule : helper?.rule2
+      return drawn !== undefined && drawn.width === size.width && drawn.height === size.height ? [{ ...drawn, columns }] : []
+    })
+    const isBurning = burning.length === ruleParts(across).length
+    ruleColumns = isBurning ? 0 : RULE_COLUMNS
     return (
       <Box flexDirection="column" height={HEADER_ROWS} overflow="hidden">
         {identity}
-        {burning === undefined ? (
-          <Raster key="rule" columns={RULE_COLUMNS} rows={1} cells={ruleCells(RULE_COLUMNS)} />
+        {isBurning ? (
+          <Box flexDirection="row" height={1} flexShrink={0}>
+            {burning.map(({ file, format, generation, columns }, n) => (
+              <Image key={n === 0 ? 'rule' : 'rule2'} source={{ file, format, generation }} columns={columns} rows={1} alt=" " />
+            ))}
+          </Box>
         ) : (
-          <Image key="rule" source={{ file: burning.file, format: burning.format, generation: burning.generation }} columns={across} rows={1} alt=" " />
+          <Raster key="rule" columns={RULE_COLUMNS} rows={1} cells={ruleCells(RULE_COLUMNS)} />
         )}
       </Box>
     )

@@ -24,15 +24,15 @@ function chunk(type: string, data: Uint8Array): Buffer {
 
 /**
  * An indexed PNG of W x H screen pixels, each pixel of the drawing a hard square of `scale`. The
- * drawing covers it whole; what sticks out at the right and bottom is cut. Pixels of the colour
- * `clear` are see-through.
+ * drawing covers it whole; what sticks out at the right and bottom is cut, and the first `X` screen
+ * pixels of each row are left out. Pixels of the colour `clear` are see-through.
  */
-export function encodePng(px: Uint8Array, w: number, h: number, scale: number, W = w * scale, H = h * scale, clear?: number): Buffer {
+export function encodePng(px: Uint8Array, w: number, h: number, scale: number, W = w * scale, H = h * scale, clear?: number, X = 0): Buffer {
   const stride = W + 1
   const raw = Buffer.alloc(stride * H)
   for (let y = 0; y * scale < H && y < h; y++) {
     const at = y * scale * stride
-    for (let x = 0; x * scale < W && x < w; x++) raw.fill(px[y * w + x]!, at + 1 + x * scale, at + 1 + Math.min(W, (x + 1) * scale))
+    for (let x = Math.floor(X / scale); x * scale - X < W && x < w; x++) raw.fill(px[y * w + x]!, at + 1 + Math.max(0, x * scale - X), at + 1 + Math.min(W, (x + 1) * scale - X))
     // The other rows of the same pixels: "same as above", which packs to almost nothing.
     for (let k = 1; k < scale && y * scale + k < H; k++) raw[at + k * stride] = 2
   }

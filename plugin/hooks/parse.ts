@@ -170,17 +170,22 @@ export function taskChange(tool: string, input: unknown, result: unknown): { id:
   return undefined
 }
 
-/** A frame the helper announces: `pit <absolute path> <number> <width>x<height>`, or `rule …`. */
-export type Announced = { kind: 'pit' | 'rule'; file: string; generation: number; width: number; height: number }
+export const FRAME_KINDS = ['pit', 'rule', 'rule2'] as const
+export type FrameKind = (typeof FRAME_KINDS)[number]
+
+/** A frame the helper announces: `pit <absolute path> <number> <width>x<height>`, or `rule …`, or `rule2 …`. */
+export type Announced = { kind: FrameKind; file: string; generation: number; width: number; height: number }
+
+export type Heard = { rest: string } & { [kind in FrameKind]?: Announced }
 
 /** The newest frame of each kind in what the helper wrote. Keeps what is not a whole line yet. */
-export function readFrames(pending: string, text: string): { rest: string; pit?: Announced; rule?: Announced } {
+export function readFrames(pending: string, text: string): Heard {
   const lines = (pending + text).split('\n')
-  const heard: { rest: string; pit?: Announced; rule?: Announced } = { rest: lines.pop() ?? '' }
+  const heard: Heard = { rest: lines.pop() ?? '' }
   for (const line of lines) {
-    const m = /^(pit|rule) (\/.+\.png) (\d+) (\d+)x(\d+)$/.exec(line)
+    const m = /^(pit|rule2?) (\/.+\.png) (\d+) (\d+)x(\d+)$/.exec(line)
     if (m === null) continue
-    const kind = m[1] as 'pit' | 'rule'
+    const kind = m[1] as FrameKind
     heard[kind] = { kind, file: m[2]!, generation: Number(m[3]), width: Number(m[4]), height: Number(m[5]) }
   }
   return heard
@@ -197,6 +202,17 @@ export function reasonOf(text: string): string {
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, 100)
+}
+
+/** The widest an `Image` may be, in cells: one more, and the whole header is refused. */
+const IMAGE_MOST = 255
+/** The widest rule: two pictures side by side. */
+export const RULE_MOST = IMAGE_MOST * 2
+
+/** How many cells wide each picture of a rule that long is. */
+export function ruleParts(columns: number): number[] {
+  const whole = Math.max(1, Math.min(RULE_MOST, Math.floor(columns)))
+  return whole <= IMAGE_MOST ? [whole] : [IMAGE_MOST, whole - IMAGE_MOST]
 }
 
 /** The same for the burning rule, one row tall: finer, or a flame has no room to be one. */

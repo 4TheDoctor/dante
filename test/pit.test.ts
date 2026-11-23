@@ -140,24 +140,37 @@ describe('frames', () => {
     expect([...raw.subarray(18, 24)]).toEqual([0, 3, 3, 3, 4, 4])
   })
 
+  it('can start further right, so two of them side by side are one picture', () => {
+    const px = Uint8Array.from([1, 2, 3, 4])
+    const row = (png: Buffer): number[] => {
+      const at = png.indexOf('IDAT')
+      return [...inflateSync(png.subarray(at + 4, at + 4 + png.readUInt32BE(at - 4))).subarray(1, 1 + png.readUInt32BE(16))]
+    }
+    const whole = row(encodePng(px, 4, 1, 3, 12, 3))
+    // Cut in the middle of a pixel of the drawing.
+    const left = row(encodePng(px, 4, 1, 3, 5, 3))
+    const right = row(encodePng(px, 4, 1, 3, 7, 3, undefined, 5))
+    expect([...left, ...right]).toEqual(whole)
+  })
+
   it('come from the helper as file paths, and it cleans up when told to stop', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'dante-pit-'))
     const run = join(dir, 'run')
     const { mkdirSync } = await import('node:fs')
     mkdirSync(run)
     const state = join(run, 'state.json')
-    writeFileSync(state, JSON.stringify({ depth: 2, mood: 'running', isDone: false, pace: 'full', heat: 1, pit: { width: 200, height: 400, scale: 2 }, rule: { width: 300, height: 18, scale: 2 } }))
+    writeFileSync(state, JSON.stringify({ depth: 2, mood: 'running', isDone: false, pace: 'full', heat: 1, pit: { width: 200, height: 400, scale: 2 }, rule: { width: 300, height: 18, scale: 2, parts: [211, 89] } }))
     const child = spawn(process.execPath, ['dist/pit/daemon.js', state, join(run, 'frames')], { stdio: ['ignore', 'pipe', 'inherit'] })
     const files = await new Promise<Record<string, string>>((resolve, reject) => {
       child.once('error', reject)
       child.once('exit', code => reject(new Error(`exit ${code}`)))
       const seen: Record<string, string> = {}
       child.stdout.on('data', data => {
-        for (const m of String(data).matchAll(/^(pit|rule) (\/.+\.png) \d+ (\d+x\d+)$/gm)) seen[`${m[1]} ${m[3]}`] = m[2]!
-        if (Object.keys(seen).length === 2) resolve(seen)
+        for (const m of String(data).matchAll(/^(pit|rule2?) (\/.+\.png) \d+ (\d+x\d+)$/gm)) seen[`${m[1]} ${m[3]}`] = m[2]!
+        if (Object.keys(seen).length === 3) resolve(seen)
       })
     })
-    expect(Object.keys(files).sort()).toEqual(['pit 200x400', 'rule 300x18'])
+    expect(Object.keys(files).sort()).toEqual(['pit 200x400', 'rule 211x18', 'rule2 89x18'])
     for (const file of Object.values(files)) expect(readFileSync(file).subarray(1, 4).toString()).toBe('PNG')
     const ended = new Promise(resolve => child.once('exit', resolve))
     writeFileSync(state, '{"stop":true}')
