@@ -30,6 +30,20 @@ describe('the high-resolution pit', () => {
     }
   })
 
+  it.each([[70, 220], [100, 220], [210, 360]])('has the name lit over the gate at %ix%i, and the error in its place', (w, h) => {
+    const pit = new Pit(w, h)
+    const count = (px: Uint8Array, ...colors: number[]): number => px.subarray(0, w * 34).filter(one => colors.includes(one)).length
+    const board = [SPOT.coif, SPOT.bone, SPOT.togaShade]
+    const lit = run(pit, goal(2), 3)
+    expect(count(lit, ...board)).toBeGreaterThan(300)
+    expect(count(lit, SPOT.robe, SPOT.robeDark)).toBeGreaterThan(60)
+    const dark = run(pit, goal(2, 'failed'), 3)
+    expect(count(dark, ...board)).toBe(0)
+    expect(count(dark, SPOT.amber)).toBe(0)
+    pit.labels = { ...pit.labels, reason: 'It does not answer' }
+    expect(count(run(pit, goal(2, 'failed'), 1), SPOT.amber)).toBeGreaterThan(20)
+  })
+
   it('walks down to where the request is, and is settled only once there', () => {
     const pit = new Pit(161, 396)
     pit.frame(goal(3), 0.1)

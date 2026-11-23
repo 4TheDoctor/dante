@@ -5,6 +5,7 @@
 import { pixelLogo, type Logo, type Picture } from './logo.js'
 import { FLAME, inkLogo, LEVELS, LOGO, RAMP, SPOT, type RampName } from './palette.js'
 import { capitals, CAR, CRATE, DANTE, DANTE_DOWN, DOWN, FERRYMAN, FILE, FOSSILS, POPCORN, REEL, stamp, textWidth, UP, VIRGIL, VIRGIL_DOWN, WARNING, wrap, write, writeBig, type Canvas } from './sprites.js'
+import { SMALL_SIZE, smallWordmark } from './wordmark.js'
 
 export type Mood = 'idle' | 'running' | 'done' | 'failed'
 
@@ -41,7 +42,6 @@ export interface Goal {
 
 export const CIRCLES = 9
 const LAST = CIRCLES - 1
-const NAME = ['DEBRID AGGREGATOR', 'NAVIGATOR', 'TRACKER ENGINE'] as const
 /** How fast the world around them moves. */
 const CALM = 0.55
 /** Seconds between two steps of the fire. */
@@ -52,6 +52,9 @@ const NUMERALS = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX']
 const WALL: readonly RampName[] = ['earth', 'blood', 'earth', 'stone', 'bog', 'fire', 'blood', 'fire', 'ice']
 const FIREWALL = 5
 const FLAME_OF = [1, 0, 0, 0, 0, 0, 0, 0, 2]
+/** The name over the gate, and the ink of each of its tones. */
+const SIGN = smallWordmark()
+const SIGN_INK = [0, SPOT.robeLight, SPOT.robe, SPOT.robe, RAMP.blood + 5, SPOT.robeDark, RAMP.blood + 3, SPOT.laurel, SPOT.laurelDark, SPOT.laurelGold, RAMP.gold + 5] as const
 
 interface Ring {
   /** Front line of the ledge. */
@@ -349,46 +352,54 @@ export class Pit {
       }
     }
     for (const side of [-1, 1]) {
-      const mast = Math.round(this.cx + side * 34)
-      const tall = 17
-      for (let y = ground - tall; y <= ground; y++) this.put(mast, y, 'wood', 4)
-      for (let b = 0; b < 3; b++) for (let k = -(6 - b); k <= 6 - b; k++) this.put(mast + k, ground - tall + 2 + b * 3, 'wood', 3.4)
-      const room = this.cx - 44
+      const room = this.cx - 48
       const trees = Math.max(1, Math.floor(room / 13))
       for (let n = 0; n < trees; n++) {
-        const x = Math.round(this.cx + side * (46 + n * 13 + noise(n, side + 2, 19) * 5))
+        const x = Math.round(this.cx + side * (54 + n * 13 + noise(n, side + 2, 19) * 5))
         branch(x, ground, -Math.PI / 2 + (noise(n, side + 2, 20) - 0.5) * 0.3, ground * (0.55 + noise(n, side + 2, 21) * 0.35), 3, n * 13 + side * 5 + 40)
       }
     }
   }
 
-  /** The gate: an arch, under the neon with the name. */
-  private gate(): { ground: number; arch: number; sign: number; half: number } {
+  /** The gate: an arch, and over it, on two posts, the sign with the name. */
+  private gate(): { ground: number; arch: number; sign: number; half: number; foot: number } {
     const ground = this.bank - 1
-    const arch = ground - 21
-    return { ground, arch, sign: arch - 33, half: Math.min(57, (this.w >> 1) - 3) }
+    const arch = ground - 24
+    const sign = arch - 24
+    return { ground, arch, sign, half: Math.min(42, (this.w >> 1) - 3), foot: sign + 22 }
   }
 
   private buildGate(): void {
     const cx = Math.round(this.cx)
-    const { ground, arch, sign, half } = this.gate()
+    const { ground, arch, sign, half, foot } = this.gate()
+    for (const side of [-1, 1]) {
+      const post = cx + side * (half - 6)
+      for (let y = foot; y <= ground; y++) for (let k = -1; k <= 1; k++) this.put(post + k, y, 'wood', k === -side ? 5.2 : k === 0 ? 3.6 : 2.4)
+      // What holds it, from the post to the board.
+      for (let k = 0; k < 6; k++) this.put(post - side * (k + 2), foot + 5 - k, 'wood', 3.8)
+      for (let k = -2; k <= 2; k++) this.put(post + k, ground, 'stone', 3)
+    }
     for (let y = arch; y <= ground; y++) {
-      for (let x = cx - 19; x <= cx + 19; x++) {
+      for (let x = cx - 24; x <= cx + 24; x++) {
         const ax = Math.abs(x - cx)
-        const isOpen = ax < 12 && (y > arch + 11 || Math.hypot(ax, (y - arch - 12) * 1.25) < 12)
+        const isOpen = ax < 13 && (y > arch + 13 || Math.hypot(ax, (y - arch - 14) * 1.2) < 13)
         if (isOpen) {
           // Firelight from below comes up through the door.
-          this.put(x, y, 'fire', Math.max(0, (y - ground + 16) / 5), 0, 34)
+          this.put(x, y, 'fire', Math.max(0, (y - ground + 21) / 5), 0, 30)
           continue
         }
-        if (Math.hypot(ax, Math.max(0, arch + 12 - y) * 1.2) > 20) continue
+        if (ax > 21 && y < ground - 2) continue
+        if (Math.hypot(ax, Math.max(0, arch + 14 - y) * 1.15) > 21.5 && y < ground - 2) continue
+        // The stones of the arch lean on the one at its top.
+        const isRing = Math.hypot(ax, Math.max(0, arch + 14 - y) * 1.15) < 17
         const block = stones(x, y, 6, 0.8, 23)
-        this.put(x, y, 'stone', 1.9 + block.id * 1.4 - (block.seam < 0.12 ? 1.1 : 0) - (ax > 16 ? 0.6 : 0), 0, 40)
+        const isKey = ax < 3 && y < arch + 4
+        this.put(x, y, 'stone', (isKey ? 4.4 : isRing ? 3 : 2.1) + block.id * 1.2 - (block.seam < 0.12 && !isKey ? 1.1 : 0) - (ax > 18 ? 0.5 : 0), 0, isRing ? 34 : 40)
       }
     }
-    for (let y = sign; y < sign + 31; y++) {
+    for (let y = sign; y < foot; y++) {
       for (let x = cx - half; x <= cx + half; x++) {
-        const isEdge = Math.abs(x - cx) === half || y === sign || y === sign + 30
+        const isEdge = Math.abs(x - cx) === half || y === sign || y === foot - 1
         this.put(x, y, 'stone', isEdge ? 3 : 0.4)
       }
     }
@@ -751,32 +762,72 @@ export class Pit {
 
   /** The name in neon, its five initials brighter. */
   private paintGate(): void {
-    const { w, h, px } = this
+    const { w, h, px, ramp } = this
     const canvas: Canvas = { w, h, px }
     const cx = Math.round(this.cx)
-    const { sign, half } = this.gate()
+    const { ground, arch, sign, half, foot } = this.gate()
     if (this.alarm > 0.35) {
-      // The sign says so, and why.
+      // The lamps are out, and a wider board says so, and why.
+      const wide = Math.min(57, (w >> 1) - 3)
+      const top = arch - 33
+      for (let y = top; y < top + 31; y++) for (let x = cx - wide; x <= cx + wide; x++) this.dot(x, y, RAMP.stone + (Math.abs(x - cx) === wide || y === top || y === top + 30 ? 2 : 0))
       const isOn = Math.sin(this.t * 7) > -0.55
       const word = 'ERROR'
-      ;[...word].forEach((letter, k) => writeBig(canvas, letter, cx - 14 + k * 6, sign + 4, isOn ? SPOT.red : RAMP.blood + 4))
-      wrap(capitals(this.labels.reason ?? ''), half * 2 - 6, 2).forEach((line, n) => write(canvas, line, cx - (textWidth(line) >> 1), sign + 15 + n * 7, SPOT.amber))
+      ;[...word].forEach((letter, k) => writeBig(canvas, letter, cx - 14 + k * 6, top + 4, isOn ? SPOT.red : RAMP.blood + 4))
+      wrap(capitals(this.labels.reason ?? ''), wide * 2 - 6, 2).forEach((line, n) => write(canvas, line, cx - (textWidth(line) >> 1), top + 15 + n * 7, SPOT.amber))
       return
     }
-    NAME.forEach((line, n) => {
-      const isBig = half >= 54
-      const wide = isBig ? line.length * 6 - 1 : textWidth(line)
-      let x = cx - (wide >> 1)
-      const y = sign + 3 + n * 9
-      ;[...line].forEach((letter, k) => {
-        const isInitial = k === 0 || line[k - 1] === ' '
-        const color = isInitial ? SPOT.laurelGold : FLAME[0]![4]!
-        if (isBig) {
-          writeBig(canvas, letter, x, y, color)
-          x += 6
-        } else x = write(canvas, letter, x, y + 1, color)
-      })
-    })
+    // Two lamps over the board; now and then one of them fails for a moment.
+    const lamps = [-1, 1].map((side, n) => ({ x: cx + side * Math.round(half * 0.5), dim: noise(n, Math.floor(this.t * 9), 101) < 0.05 ? 0.3 : 0 }))
+    const shadeAt = (x: number, y: number): number => Math.min(...lamps.map(lamp => Math.hypot((x - lamp.x) / (half * 0.72), (y - sign - 2) / 24) + lamp.dim)) + (bayer(x, y) / 16 - 0.5) * 0.14
+    // Their light on the wood, the stones and the ground.
+    for (let y = Math.max(0, sign - 8); y <= ground + 1; y++) {
+      for (let x = Math.max(0, cx - half - 26); x <= Math.min(w - 1, cx + half + 26); x++) {
+        const d = Math.hypot(Math.max(0, Math.abs(x - cx) - half), Math.max(0, sign - y, (y - foot) * 0.75))
+        if (d <= 0) continue
+        const k = y * w + x
+        const step = px[k]! - ramp[k]!
+        const glow = 1.35 - d / 19 - (bayer(x, y) + 0.5) / 16
+        if (glow > 0 && step >= 0 && step < LEVELS - 1) px[k] = px[k]! + (glow > 0.8 && step < LEVELS - 2 && step > 0 ? 2 : 1)
+      }
+    }
+    for (let y = sign; y < foot; y++) {
+      for (let x = cx - half; x <= cx + half; x++) {
+        const isFrame = Math.abs(x - cx) === half || y === sign || y === foot - 1
+        const v = shadeAt(x, y)
+        this.dot(x, y, isFrame ? (y === sign && v < 0.6 ? RAMP.earth + 5 : RAMP.earth + 2) : v < 0.3 ? SPOT.coif : v < 0.58 ? SPOT.bone : v < 0.86 ? SPOT.togaShade : RAMP.earth + 6)
+      }
+    }
+    for (const { x, dim } of lamps) {
+      for (let k = 0; k < 4; k++) this.dot(x, sign - 1 - k, SPOT.metalDark)
+      for (let k = -3; k <= 3; k++) this.dot(x + k, sign - 4, SPOT.metalDark)
+      for (let k = -2; k <= 2; k++) this.dot(x + k, sign - 5, SPOT.metal)
+      for (let k = -2; k <= 2; k++) this.dot(x + k, sign - 3, dim > 0 ? SPOT.amberDark : SPOT.window)
+    }
+    if (half * 2 - 5 < SMALL_SIZE.w) {
+      // Too narrow for it: the five letters alone.
+      const times = half * 2 > 64 ? 2 : 1
+      const tiny: Canvas = { w: 29, h: 7, px: new Uint8Array(29 * 7) }
+      LETTERS.forEach((letter, k) => writeBig(tiny, letter, k * 6, 0, SPOT.robeDark))
+      for (let y = 0; y < 7 * times; y++) for (let x = 0; x < 29 * times; x++) if (tiny.px[Math.floor(y / times) * 29 + Math.floor(x / times)] !== 0) this.dot(cx - ((29 * times) >> 1) + x, sign + 11 - ((7 * times) >> 1) + y, SPOT.robeDark)
+      return
+    }
+    const left = cx - (SIGN.w >> 1)
+    const top = sign + 2
+    const inked = (x: number, y: number): boolean => x >= 0 && y >= 0 && x < SIGN.w && y < SIGN.h && SIGN.px[y * SIGN.w + x]! > 0
+    // Now and then a light runs over it.
+    const shine = ((this.t * 1.1) % 11) * 22 - 20
+    for (let y = 0; y <= SIGN.h; y++) {
+      for (let x = 0; x <= SIGN.w; x++) {
+        const v = shadeAt(left + x, top + y)
+        if (!inked(x, y)) {
+          if (inked(x - 1, y - 1)) this.dot(left + x, top + y, v < 0.7 ? RAMP.stone + 6 : RAMP.earth + 4)
+          continue
+        }
+        const tone = SIGN.px[y * SIGN.w + x]!
+        this.dot(left + x, top + y, Math.abs(x + (SIGN.h - y) * 0.8 - shine) < 2.5 ? SPOT.star : SIGN_INK[tone < 6 && v > 0.8 ? tone + 1 : tone]!)
+      }
+    }
   }
 
   /** The little light the two carry. */
@@ -802,6 +853,20 @@ export class Pit {
         const wave = Math.sin(x * 0.22 + t * 0.9 + y * 2.4) + Math.sin(x * 0.09 - t * 0.6 + y * 1.3)
         if (wave > 1.6) this.dot(x, y, RAMP.sea + 4)
         else if (wave > 1.15) this.dot(x, y, RAMP.sea + 3)
+      }
+    }
+    // What is lit on the bank, broken up by the water.
+    if (this.alarm < 0.35) {
+      const { half } = this.gate()
+      const cx = Math.round(this.cx)
+      for (let y = this.bank + 1; y < this.top; y++) {
+        const deep = (y - this.bank) / (this.top - this.bank)
+        const sway = Math.round(Math.sin(y * 1.9 + t * 2.1) * 1.6)
+        for (let x = cx - half; x <= cx + half; x++) {
+          const isDoor = Math.abs(x - cx) < 13
+          const chance = (isDoor ? 0.5 : 0.2) * (1 - deep * 0.55) * (1 - (Math.abs(x - cx) / half) * 0.4)
+          if (noise((x + sway) >> 2, y, Math.floor(t * 3 + y * 0.7)) < chance) this.dot(x, y, isDoor ? RAMP.fire + (deep < 0.5 ? 5 : 4) : RAMP.gold + (deep < 0.5 ? 3 : 2))
+        }
       }
     }
     for (let n = 0; n < 3; n++) {
