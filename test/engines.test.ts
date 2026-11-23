@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { findTitle } from '../src/title.js'
 import { aioToCandidate, AioStreamsEngine, type AioResult } from '../src/engines/aiostreams.js'
 import { cacheFromName, StremioAddonEngine, streamPath } from '../src/engines/stremio-addon.js'
 import { parseTorznab, torznabQueries, TorznabEngine } from '../src/engines/torznab.js'
@@ -104,5 +105,20 @@ describe('AIOStreams', () => {
     await expect(engine.search({ type: 'series', imdbId: 'tt5', season: 1, episode: 2 })).rejects.toThrow(/Invalid credentials/)
     expect(calls[0]!.headers.authorization).toBe(`Basic ${Buffer.from('uuid:pw').toString('base64')}`)
     expect(calls[0]!.url).toContain('id=tt5%3A1%3A2')
+  })
+})
+
+describe('titles', () => {
+  it('says whose each one is when several share name and year, and asks nothing more otherwise', async () => {
+    const meta = (id: string, name: string, year: string) => ({ id, type: 'movie', name, releaseInfo: year })
+    const { fetch, calls } = mockFetch([
+      ['GET', /catalog\/movie/, () => ({ json: { metas: [meta('tt1', 'Example', '2026'), meta('tt2', 'Example', '2026'), meta('tt3', 'Example', '1999')] } })],
+      ['GET', /catalog\/series/, () => ({ json: { metas: [] } })],
+      ['GET', /meta\/movie\/tt1/, () => ({ json: { meta: { ...meta('tt1', 'Example', '2026'), director: ['Ann Author'], cast: ['Bo Actor', 'Cy Actor'] } } })],
+      ['GET', /meta\/movie\/tt2/, () => ({ json: { meta: { ...meta('tt2', 'Example', '2026'), director: null, cast: [] } } })],
+    ])
+    const found = await findTitle('example', undefined, fetch)
+    expect(found.map(m => m.people)).toEqual(['by Ann Author, with Bo Actor, Cy Actor', 'no director or cast listed', undefined])
+    expect(calls.filter(c => c.url.includes('/meta/'))).toHaveLength(2)
   })
 })

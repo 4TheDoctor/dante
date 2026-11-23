@@ -11,6 +11,8 @@ export interface TitleMatch {
   year?: number
   /** "2011–2019" for series. */
   releaseInfo?: string
+  /** Who made it and who is in it, to tell apart titles that share name and year. */
+  people?: string
 }
 
 interface Meta {
@@ -18,6 +20,14 @@ interface Meta {
   type: string
   name: string
   releaseInfo?: string
+  director?: string[] | null
+  cast?: string[] | null
+}
+
+function peopleOf(meta: Meta): string | undefined {
+  const by = (meta.director ?? []).slice(0, 2).join(' and ')
+  const cast = (meta.cast ?? []).slice(0, 3).join(', ')
+  return [by && `by ${by}`, cast && `with ${cast}`].filter(Boolean).join(', ') || undefined
 }
 
 function yearOf(info?: string): number | undefined {
@@ -52,5 +62,14 @@ export async function findTitle(query: string, type?: MediaType, fetchImpl?: Fet
       }
     }
   }
+  // Several with the same name and year: say whose each one is.
+  const keyOf = (m: TitleMatch) => `${m.type} ${m.name.toLowerCase()} ${m.year}`
+  const shared = out.filter(m => out.some(o => o !== m && keyOf(o) === keyOf(m))).slice(0, 4)
+  await Promise.all(
+    shared.map(async m => {
+      const body = await getJson<{ meta?: Meta }>(`${CINEMETA}/meta/${m.type}/${m.imdbId}.json`, { fetchImpl }).catch(() => ({ meta: undefined }))
+      m.people = body.meta ? (peopleOf(body.meta) ?? 'no director or cast listed') : undefined
+    }),
+  )
   return out
 }

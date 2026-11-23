@@ -37,7 +37,7 @@ export function buildServer(dante = new Dante(loadConfig())): McpServer {
       try {
         const matches = await findTitle(query, type as MediaType | undefined)
         if (!matches.length) return text(`No title found for "${query}".`)
-        return text(matches.map((m, i) => `${i + 1}. ${m.name} (${m.releaseInfo ?? m.year ?? '?'}) · ${m.type} · ${m.imdbId}`).join('\n'))
+        return text(matches.map((m, i) => `${i + 1}. ${m.name} (${m.releaseInfo ?? m.year ?? '?'}) · ${m.type} · ${m.imdbId}${m.people ? ` · ${m.people}` : ''}`).join('\n'))
       } catch (err) {
         return fail(err)
       }
