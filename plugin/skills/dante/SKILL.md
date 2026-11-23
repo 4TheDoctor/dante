@@ -17,7 +17,7 @@ Use when the user wants to find, pick, add or watch a film, an episode, a docume
 - Search only through Dante's tools and the engines in `dante.toml`. Never look for torrent sites or links on the web.
 - Never print, echo or store API keys, addon config URLs or Keychain values. Never run `security`.
 - `add_to_debrid` only after the user picked that result. `check_cache` needs no permission; say that AllDebrid and Real-Debrid checks add and then remove.
-- Claim only what the tool output shows: language, HDR format, cache status. "Multi audio, not confirmed" stays unconfirmed.
+- Claim only what the tool output shows: language, HDR format, cache status. "Multi audio, not confirmed" stays unconfirmed, and a language "mentioned, maybe only as subtitles" is not audio: say it is not confirmed.
 - Read `CLAUDE.md` in the Dante folder (the user's tastes) before recommending.
 - One question at a time.
 

@@ -1,4 +1,4 @@
-import { hasWord, languageName, languagesFromName } from './languages.js'
+import { audioLanguagesFromName, hasWord, languageName, languagesFromName, withoutSubtitles } from './languages.js'
 import type {
   Candidate,
   Codec,
@@ -154,6 +154,11 @@ export function parseRelease(name: string): ReleaseInfo {
   if (W('sample').test(s)) flags.push('sample')
   if (W('extras|bonus|featurette').test(s)) flags.push('extras')
 
+  const multi = hasWord(tags, 'multi') || hasWord(tags, 'multi audio')
+  const dual = hasWord(tags, 'dual') || hasWord(tags, 'dual audio')
+  const audible = withoutSubtitles(name)
+  const languages = audioLanguagesFromName(tagRegion(audible, spaced(audible)), multi || dual)
+
   const groupMatch = /-([A-Za-z0-9]+)(?:\.[a-z0-9]{2,4})?$/.exec(name.trim())
   const ep = episodeOf(s)
 
@@ -164,9 +169,10 @@ export function parseRelease(name: string): ReleaseInfo {
     codec: first(CODECS),
     audio,
     channels,
-    languages: languagesFromName(tags),
-    multi: hasWord(tags, 'multi') || hasWord(tags, 'multi audio'),
-    dual: hasWord(tags, 'dual') || hasWord(tags, 'dual audio'),
+    languages,
+    mentioned: languagesFromName(tags).filter(l => !languages.includes(l)),
+    multi,
+    dual,
     group: groupMatch?.[1],
     ...ep,
     flags,
@@ -189,12 +195,25 @@ export function mergeInfo(file: ReleaseInfo, folder: ReleaseInfo | undefined): R
     audio: list(file.audio, folder.audio),
     channels: file.channels ?? folder.channels,
     languages: list(file.languages, folder.languages),
+    mentioned: list(file.mentioned, folder.mentioned),
     multi: file.multi || folder.multi,
     dual: file.dual || folder.dual,
     season: file.season ?? folder.season,
     episode: file.episode ?? folder.episode,
     pack: file.pack || folder.pack,
   }
+}
+
+/**
+ * Sites that publish Castilian dubs and often name no language ("[HDTV 1080p][Cap.306]"): there
+ * the Spanish flag comes from the site, and is the audio unless the name says it is subtitled.
+ */
+const CASTILIAN_SITES = new Set(['wolfmax4k', 'mejortorrent'])
+const ORIGINAL_VOICE = W('v ?o(?: ?s)?(?: ?e)?|subt\\p{L}*')
+
+function isCastilianDub(candidate: Candidate, s: string): boolean {
+  const site = candidate.source?.toLowerCase() ?? ''
+  return CASTILIAN_SITES.has(site) && candidate.languages.includes('spa') && !ORIGINAL_VOICE.test(s)
 }
 
 const GB = 1024 ** 3
@@ -242,20 +261,30 @@ export function rankOne(candidate: Candidate, prefs: Preferences): Ranked | unde
     add(0, '4K without HDR')
   }
 
-  const named = [...new Set([...fileInfo.languages, ...(folderInfo?.languages ?? [])])]
+  // The engine's languages may be those of the subtitles: only the name, or a site that dubs,
+  // states the audio.
+  const stated = [...fileInfo.languages, ...(folderInfo?.languages ?? [])]
+  if (isCastilianDub(candidate, s) && !stated.includes('lat')) stated.push('spa')
+  const languages = [...new Set(stated)]
+  const named = [...languages, ...fileInfo.mentioned, ...(folderInfo?.mentioned ?? [])]
   // Engines read "Español Latino" as both; the name says which one it is.
   const isLatinOnly = named.includes('lat') && !named.includes('spa')
-  const languages = [...new Set([...named, ...candidate.languages.filter(l => !(isLatinOnly && l === 'spa'))])]
+  const engineLanguages = candidate.languages.filter(l => !(isLatinOnly && l === 'spa'))
+  const mentioned = [...new Set([...named, ...engineLanguages])].filter(l => !languages.includes(l))
   const multi = info.multi || info.dual || candidate.multiAudio
   let missingLanguage = false
   if (prefs.languages.length) {
     const i = prefs.languages.findIndex(l => languages.includes(l))
+    const maybe = prefs.languages.find(l => mentioned.includes(l))
     // With dubFallback the video comes first and the audio can be added later (audio4films), so a
     // missing language costs little; without it the language decides.
     if (i >= 0) {
       add(30 - 5 * i, `audio in ${languageName(prefs.languages[i]!)}`)
     } else if (multi) {
       add(prefs.dubFallback ? 5 : -20, `multi audio, ${languageName(prefs.languages[0]!)} not confirmed`)
+      missingLanguage = true
+    } else if (maybe !== undefined) {
+      add(prefs.dubFallback ? 0 : -40, `${languageName(maybe)} is mentioned, maybe only as subtitles`)
       missingLanguage = true
     } else {
       add(prefs.dubFallback ? -10 : -60, `no ${prefs.languages.map(languageName).join(' or ')} audio known`)
@@ -308,7 +337,7 @@ export function rankOne(candidate: Candidate, prefs: Preferences): Ranked | unde
     if (points > 0) add(points, `${candidate.seeders} seeders`)
   }
 
-  return { candidate, info, score, reasons, languages, missingLanguage }
+  return { candidate, info, score, reasons, languages, mentioned, missingLanguage }
 }
 
 /** Rank, drop what the preferences exclude, and merge duplicates (same file reported twice). */

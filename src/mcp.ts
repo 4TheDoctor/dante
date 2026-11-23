@@ -6,7 +6,7 @@ import { z } from 'zod'
 import { prepareBdmv } from './bdmv.js'
 import { danteHome, loadConfig, resolvePath } from './config.js'
 import { runDoctor } from './doctor.js'
-import { planDub } from './dub.js'
+import { originalLanguageOf, planDub } from './dub.js'
 import { cacheText, searchText } from './format.js'
 import { formatSize, redactUrl, resolveFinalUrl } from './http.js'
 import { openInPlayer } from './play.js'
@@ -212,7 +212,7 @@ export function buildServer(dante = new Dante(loadConfig())): McpServer {
         const [v, a] = await Promise.all([dante.links(videoId, s), dante.links(audioId, s)])
         const [vf, af] = await Promise.all([resolveFinalUrl(v.url), resolveFinalUrl(a.url)])
         const lang = audio.languages.find(l => dante.prefs.languages.includes(l)) ?? dante.prefs.languages[0] ?? 'spa'
-        const vo = video.languages.find(l => !dante.prefs.languages.includes(l)) ?? 'eng'
+        const vo = originalLanguageOf(video, dante.prefs.languages)
         return text(
           [
             `Video: ${video.candidate.name}`,

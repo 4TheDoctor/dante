@@ -23,8 +23,10 @@ export function cacheText(r: Ranked): string {
 export function audioText(r: Ranked): string {
   const langs = r.languages.map(languageName)
   const multi = r.info.multi || r.info.dual || r.candidate.multiAudio
-  if (!langs.length) return multi ? 'multi audio (languages not listed)' : 'audio language not stated'
-  return `${langs.join(', ')}${multi ? ' (multi audio)' : ''}`
+  const stated = langs.length
+    ? `${langs.join(', ')}${multi ? ' (multi audio)' : ''}`
+    : multi ? 'multi audio (languages not listed)' : 'audio language not stated'
+  return r.mentioned.length ? `${stated}; mentioned, maybe only as subtitles: ${r.mentioned.map(languageName).join(', ')}` : stated
 }
 
 export function videoText(r: Ranked): string {

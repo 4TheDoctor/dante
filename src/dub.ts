@@ -21,6 +21,11 @@ function sameEpisode(a: Ranked, b: Ranked): boolean {
   return x.episode === y.episode
 }
 
+/** The language a release was made in, as far as the search tells. */
+export function originalLanguageOf(r: Ranked, wanted: string[]): string {
+  return [...r.languages, ...r.mentioned].find(l => !wanted.includes(l)) ?? 'eng'
+}
+
 /**
  * When the best video lacks the wanted audio and another release has it, plan to put that audio
  * onto the better video with audio4films (github.com/4TheDoctor/audio4films). It measures the
@@ -32,7 +37,7 @@ export function planDub(ranked: Ranked[], prefs: Preferences): DubPlan | undefin
   for (const language of prefs.languages) {
     const audio = ranked.find(r => r !== video && r.languages.includes(language) && sameEpisode(r, video))
     if (!audio) continue
-    const originalLanguage = video.languages.find(l => !prefs.languages.includes(l)) ?? 'eng'
+    const originalLanguage = originalLanguageOf(video, prefs.languages)
     // audio4films tags Latin American Spanish as Spanish too.
     const dubLang = language === 'lat' ? 'spa' : language
     return {

@@ -198,21 +198,48 @@ export function normLanguage(word: string): string | undefined {
   return WORDS[w]
 }
 
-/** Languages named in a release name, by whole words. */
-export function languagesFromName(spaced: string): string[] {
-  const found: string[] = []
-  const add = (code: string) => {
-    if (!found.includes(code)) found.push(code)
-  }
+/** Words in a release name that name languages, each with the languages it stands for. */
+function languageWords(spaced: string): Array<[string, string[]]> {
   // "Español Latino" is one language, the Latin American one, not two.
   const text = spaced.replace(/(?<![\p{L}\p{N}])(?:español|espanol|spanish|esp|spa)[\s()[\]]+(?:latino|latam|lat|latin(?: american?)?)(?![\p{L}\p{N}])/gu, ' latino ')
-  for (const [word, code] of Object.entries(WORDS)) {
-    if (hasWord(text, word)) add(code)
-  }
-  for (const [word, codes] of Object.entries(GROUPS)) {
-    if (hasWord(text, word)) codes.forEach(add)
-  }
-  return found
+  const words = Object.entries(WORDS).map(([word, code]): [string, string[]] => [word, [code]])
+  return [...words, ...Object.entries(GROUPS)].filter(([word]) => hasWord(text, word))
+}
+
+/** Languages named in a release name, by whole words, as audio or as subtitles. */
+export function languagesFromName(spaced: string): string[] {
+  return [...new Set(languageWords(spaced).flatMap(([, codes]) => codes))]
+}
+
+/** "english", "french", "german"…: the plain English names of languages. */
+const PLAIN_NAMES = new Set(['spanish', ...Object.values(LANGUAGE_NAMES).map(name => name.toLowerCase())])
+
+/**
+ * Languages a release name gives as audio. Expects the name without its subtitle lists
+ * (`withoutSubtitles`). "Spanish" never proves it, and neither does a list of plain names
+ * ("English French Spanish"): releases use both for subtitles. A plain name alone (FRENCH) is the
+ * release's audio tag, and a name that says dual or multi audio lists its audio.
+ */
+export function audioLanguagesFromName(spaced: string, severalAudios: boolean): string[] {
+  const words = languageWords(spaced)
+  const list = !severalAudios && words.filter(([word]) => PLAIN_NAMES.has(word)).length > 1
+  const proofs = words.filter(([word]) => word !== 'spanish' && !(list && PLAIN_NAMES.has(word)))
+  return [...new Set(proofs.flatMap(([, codes]) => codes))]
+}
+
+const LANGUAGE = `(?:${Object.keys(WORDS).sort((a, b) => b.length - a.length).join('|')})(?![\\p{L}\\p{N}])`
+const LANGUAGE_LIST = `${LANGUAGE}(?:[\\s._,+&/-]+${LANGUAGE})*`
+const SUBTITLES = '(?:subs?|subtitles?|subt(?:[ií]tulos?|itulad[oa]s?)?|napisy)(?![\\p{L}\\p{N}])'
+// A bracket or a "+" between the two keeps them apart: in "[Castellano][Subs]" and "Ingles+Subs"
+// the language is the audio.
+const SUBTITLE_LISTS = new RegExp(
+  `(?<![\\p{L}\\p{N}])(?:${SUBTITLES}[\\s._:-]*[([]?${LANGUAGE_LIST}|${LANGUAGE_LIST}[\\s._-]+${SUBTITLES})`,
+  'giu',
+)
+
+/** A release name without the languages it gives as subtitles: "Sub (Rus Eng Spa)", "Esp.Subs". */
+export function withoutSubtitles(name: string): string {
+  return name.replace(SUBTITLE_LISTS, ' ')
 }
 
 /** Whole-word, case-insensitive match on a name already lowercased and split into spaces. */

@@ -42,7 +42,10 @@ export interface Candidate {
   seeders?: number
   /** Indexer or tracker that reported it. */
   source?: string
-  /** Audio languages the engine reported (codes from `languages.ts`). */
+  /**
+   * Languages the engine reported (codes from `languages.ts`). They may be audio or only
+   * subtitles: Torrentio's flags mix both.
+   */
   languages: string[]
   /** The engine said "multi audio" without listing every language. */
   multiAudio: boolean
@@ -63,7 +66,10 @@ export interface ReleaseInfo {
   codec?: Codec
   audio: string[]
   channels?: string
+  /** Languages the name gives as audio. */
   languages: string[]
+  /** Other languages it names, maybe only as subtitles. */
+  mentioned: string[]
   multi: boolean
   dual: boolean
   group?: string
@@ -98,8 +104,10 @@ export interface Ranked {
   score: number
   /** Every point added or taken, in words, so the choice can be checked. */
   reasons: string[]
-  /** Languages known to be in it: from the name and from the engine. */
+  /** Audio languages the name states, or the site it comes from. */
   languages: string[]
-  /** None of the wanted languages is known to be in it. */
+  /** Languages the name or the engine mentions, maybe only as subtitles. */
+  mentioned: string[]
+  /** None of the wanted languages is stated as audio. */
   missingLanguage: boolean
 }
