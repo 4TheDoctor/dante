@@ -42,9 +42,6 @@ describe('the Inferno mod reads Dante tool calls', () => {
     for (const lang of ['en', 'es'] as const) {
       const w = words(lang)
       expect(Object.keys(w.steps)).toEqual([...STEPS])
-      expect(w.circleOrdinals).toHaveLength(STEPS.length)
     }
-    expect(words('es').circle(2, words('es').steps.cache)).toBe('Tercer círculo: caché')
-    expect(words('en').circle(2, words('en').steps.cache)).toBe('Third circle: cache')
   })
 })

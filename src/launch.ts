@@ -76,8 +76,11 @@ export async function launch(extra: string[]): Promise<number> {
   const { installTheme } = await import('./setup.js')
   installTheme()
   let lang = 'en'
+  let animation = 'full'
   try {
-    lang = loadConfig(home).ui_language
+    const config = loadConfig(home)
+    lang = config.ui_language
+    animation = config.animation
   } catch {
     // A broken dante.toml is reported by the MCP server and doctor; the look falls back to English.
   }
@@ -86,7 +89,7 @@ export async function launch(extra: string[]): Promise<number> {
   if (tty) process.stdout.write(`\x1b]11;${BACKDROP}\x07`)
   const child = spawn(claude, claudeArgs(extra), {
     stdio: 'inherit',
-    env: { ...process.env, DANTE_HOME: home, DANTE_UI_LANG: lang },
+    env: { ...process.env, DANTE_HOME: home, DANTE_UI_LANG: lang, DANTE_ANIMATION: animation },
   })
   // Claude Code reads Ctrl+C itself; this process only waits for it.
   const ignore = () => {}

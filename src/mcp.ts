@@ -246,6 +246,20 @@ export function buildServer(dante = new Dante(loadConfig())): McpServer {
   )
 
   server.registerTool(
+    'progress',
+    {
+      description:
+        'Show the person how far along a request is: it moves Dante down the circles beside the chat. For requests of three or more steps that find_title, search_streams, check_cache, add_to_debrid and play do not already cover. Call it once at the start with done 0 and the number of steps, then once after each step that is really finished.',
+      inputSchema: {
+        title: z.string().max(80).describe('What is being done, in a few words'),
+        total: z.number().int().min(1).max(50),
+        done: z.number().int().min(0).max(50),
+      },
+    },
+    async ({ title, total, done }) => text(`${title}: ${Math.min(done, total)} of ${total} steps done.`),
+  )
+
+  server.registerTool(
     'doctor',
     { description: 'Check engines, debrid accounts, players and audio4films. Never prints keys.', inputSchema: {} },
     async () => text(await runDoctor(dante)),

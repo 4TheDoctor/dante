@@ -4,10 +4,20 @@ export type Lang = 'en' | 'es'
 export type StepId = 'title' | 'search' | 'cache' | 'add' | 'play'
 export const STEPS: readonly StepId[] = ['title', 'search', 'cache', 'add', 'play']
 
+const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX'] as const
+
 type Words = {
   steps: Record<StepId, string>
-  circle: (n: number, name: string) => string
-  circleOrdinals: readonly string[]
+  /** The nine circles, top to bottom. */
+  circles: readonly string[]
+  circle: (depth: number) => string
+  stars: string
+  verseStart: string
+  verseEnd: string
+  tasks: (done: number, total: number) => string
+  paneHelp: string
+  paneOpened: string
+  paneClosed: string
   verbs: Record<string, string>
   working: readonly string[]
   served: readonly string[]
@@ -17,8 +27,15 @@ type Words = {
 
 const en: Words = {
   steps: { title: 'Title', search: 'Search', cache: 'Cache', add: 'Add', play: 'Play' },
-  circleOrdinals: ['First', 'Second', 'Third', 'Fourth', 'Fifth'],
-  circle: (n, name) => `${en.circleOrdinals[n] ?? ''} circle: ${name.toLowerCase()}`,
+  circles: ['Limbo', 'Lust', 'Gluttony', 'Greed', 'Wrath', 'Heresy', 'Violence', 'Fraud', 'Treachery'],
+  circle: depth => `Circle ${ROMAN[depth] ?? ''} · ${en.circles[depth] ?? ''}`,
+  stars: 'The stars',
+  verseStart: 'Nel mezzo del cammin di nostra vita',
+  verseEnd: 'E quindi uscimmo a riveder le stelle',
+  tasks: (done, total) => `${done} of ${total} steps`,
+  paneHelp: 'Show or hide the circles of Hell beside the chat',
+  paneOpened: 'The circles are beside the chat. /inferno hides them.',
+  paneClosed: 'The circles are hidden. /inferno brings them back.',
   verbs: {
     find_title: 'Title',
     search_streams: 'Search',
@@ -30,6 +47,7 @@ const en: Words = {
     plan_dub: 'Dub',
     prepare_bdmv: 'Disc',
     doctor: 'Doctor',
+    progress: 'Step',
   },
   working: [
     'Descending',
@@ -49,8 +67,15 @@ const en: Words = {
 
 const es: Words = {
   steps: { title: 'Título', search: 'Búsqueda', cache: 'Caché', add: 'Añadir', play: 'Reproducir' },
-  circleOrdinals: ['Primer', 'Segundo', 'Tercer', 'Cuarto', 'Quinto'],
-  circle: (n, name) => `${es.circleOrdinals[n] ?? ''} círculo: ${name.toLowerCase()}`,
+  circles: ['Limbo', 'Lujuria', 'Gula', 'Avaricia', 'Ira', 'Herejía', 'Violencia', 'Fraude', 'Traición'],
+  circle: depth => `Círculo ${ROMAN[depth] ?? ''} · ${es.circles[depth] ?? ''}`,
+  stars: 'Las estrellas',
+  verseStart: 'Nel mezzo del cammin di nostra vita',
+  verseEnd: 'E quindi uscimmo a riveder le stelle',
+  tasks: (done, total) => `${done} de ${total} pasos`,
+  paneHelp: 'Muestra u oculta los círculos del Infierno al lado del chat',
+  paneOpened: 'Los círculos están al lado del chat. /inferno los oculta.',
+  paneClosed: 'Los círculos están ocultos. /inferno los vuelve a mostrar.',
   verbs: {
     find_title: 'Título',
     search_streams: 'Busco',
@@ -62,6 +87,7 @@ const es: Words = {
     plan_dub: 'Doblaje',
     prepare_bdmv: 'Disco',
     doctor: 'Revisión',
+    progress: 'Paso',
   },
   working: [
     'Descendiendo',

@@ -1,8 +1,10 @@
 import { atom, read, update } from 'claude-code'
 import type { Register } from 'claude-code'
 
-import type { Journey } from '../types'
-import { danteTool, outputText, parseTransfers, STEP_OF, targetOf, titleOf } from './parse'
+import type { Journey, TaskList, TransferRow } from '../types'
+import { draw, drawRule, makeScene, toCells, type Scene } from './inferno'
+import { danteTool, declaredSteps, downloadOf, isDub, outputText, parseTransfers, STEP_OF, targetOf, taskChange, titleOf } from './parse'
+import { advance, isSettled, progressOf, type Motion, type Progress } from './progress'
 import { STEPS, words, type Lang } from './words'
 
 // Dante's look for Claude Code ("Inferno"): the laurelled profile in the header, the five circles
@@ -23,13 +25,23 @@ const PORTRAIT = { columns: 10, rows: 4 } as const
 const EMBER = '#D9452B'
 const GOLD = '#D4A24C'
 const LAUREL = '#8FB65A'
-/** The rule that closes the pinned header: from deep ember to gold. */
-const RULE = ['#8E2418', '#B8352A', EMBER, '#F07A4D', GOLD] as const
+
+// The circles of Hell, drawn beside the chat (inferno.ts) and repainted in place on this beat.
+const PANE_ID = 'inferno'
+const PANE_COLUMNS = 46
+const CAPTION_ROWS = 4
+/** The widest a Raster may be. */
+const RULE_COLUMNS = 512
+const BEAT_MS = 100
+/** With nothing happening for this long, the picture stands still. */
+const REST_AFTER_S = 300
 
 // Literals on purpose: Claude Code scans these references before running the module.
 const journeyAtom = atom({ plugin: 'dante', key: 'journey' } as const, null, { shape: 'journey-1' })
 const transfersAtom = atom({ plugin: 'dante', key: 'transfers' } as const, [], { shape: 'transfers-1' })
 const tickAtom = atom({ plugin: 'dante', key: 'tick' } as const, 0)
+const NO_TASKS: TaskList = { title: '', all: {} }
+const tasksAtom = atom({ plugin: 'dante', key: 'tasks' } as const, NO_TASKS, { shape: 'tasks-2' })
 
 type CallState = { isRunning: boolean; isErrored: boolean; isInterrupted: boolean }
 const markOf = (call: CallState): { glyph: string; color: string } =>
@@ -73,7 +85,7 @@ const VOICE = {
   scope: 'session',
   text: `# Dante
 
-This session runs inside Dante: Claude Code set up as a media concierge, opened in the user's Dante folder. Use the \`dante\` skill and the \`mcp__*dante__*\` tools for anything about finding, choosing, adding or playing films and series; CLAUDE.md in this folder holds the user's tastes. In chat, speak as Dante: a calm, well-read guide who knows the way through a maze of releases and says plainly which one and why, in the user's language and in few words. No theatrics in tables, warnings or anything with numbers. Never print keys, addon config URLs or Keychain values.`,
+This session runs inside Dante: Claude Code set up as a media concierge, opened in the user's Dante folder. Use the \`dante\` skill and the \`mcp__*dante__*\` tools for anything about finding, choosing, adding or playing films and series; CLAUDE.md in this folder holds the user's tastes. For any other request of three or more steps, declare them with Dante's \`progress\` tool and mark each one when it is really finished. In chat, speak as Dante: a calm, well-read guide who knows the way through a maze of releases and says plainly which one and why, in the user's language and in few words. No theatrics in tables, warnings or anything with numbers. Never print keys, addon config URLs or Keychain values.`,
 } as const
 
 type Header = { version: string; model: string; cwd: string }
@@ -88,6 +100,57 @@ export const register: Register = on => {
   let isFullscreen: boolean | undefined
   let isPlaced = false
 
+  // The picture. It follows mirrors of the stored values, so a beat costs no round trip.
+  let journeyNow: Journey | null = null
+  let tasksNow: TaskList = NO_TASKS
+  let transfersNow: readonly TransferRow[] = []
+  let isWorking = false
+  let animation: 'full' | 'calm' | 'off' = 'full'
+  let motion: Motion = { depth: 0, stars: 0 }
+  let seconds = 0
+  let restless = 0
+  let beats = 0
+  let pit: Scene | undefined
+  // What is mounted now, learnt when it draws and forgotten when a repaint is refused.
+  let isPitUp = false
+  let ruleColumns = 0
+  let isRuleHot = false
+  let beatTimer: { cancel: () => void } | undefined
+
+  const tally = () => {
+    const all = Object.values(tasksNow.all)
+    return { total: all.length, done: all.filter(one => one === 'done').length }
+  }
+
+  const target = (): Progress =>
+    progressOf({ journey: journeyNow, tasks: tally(), download: downloadOf(transfersNow), isWorking })
+
+  const pitCells = (): string | undefined =>
+    pit === undefined
+      ? undefined
+      : toCells(draw(pit, { depth: motion.depth, mood: target().mood, t: seconds, stars: motion.stars }), pit.w, pit.h)
+
+  const ruleCells = (columns: number): string => toCells(drawRule(columns, seconds, isWorking ? 1 : 0.12), columns, 2)
+
+  // One beat: move the picture on, and say what needs repainting.
+  const beat = (): { pit?: string; rule?: string } => {
+    const to = target()
+    const isBusy = isWorking || !isSettled(motion, to)
+    beats += 1
+    seconds += BEAT_MS / 1000
+    restless = isBusy ? 0 : restless + BEAT_MS / 1000
+    motion = advance(motion, to, BEAT_MS / 1000)
+    const pace = isBusy ? (animation === 'calm' ? 2 : 1) : animation === 'calm' || restless > REST_AFTER_S ? 0 : 3
+    const isDue = pace !== 0 && beats % pace === 0
+    // The rule burns while Dante works, and one last cold repaint puts it out.
+    const isRuleDue = ruleColumns > 0 && (isWorking ? isDue : isRuleHot)
+    isRuleHot = isWorking
+    return {
+      ...(isPitUp && isDue ? { pit: pitCells() } : {}),
+      ...(isRuleDue ? { rule: ruleCells(ruleColumns) } : {}),
+    }
+  }
+
   // True once, when the header should become a transcript row.
   const claimPlacement = (): boolean => {
     if (header === null || isPlaced || (isPinned && isFullscreen !== false)) return false
@@ -100,8 +163,47 @@ export const register: Register = on => {
     const wanted = await $.env.get('DANTE_UI_LANG')
     lang = wanted === 'es' ? 'es' : 'en'
     isPinned = (await $.env.get('DANTE_PINNED_HEADER')) === '1'
+    const moves = await $.env.get('DANTE_ANIMATION')
+    animation = moves === 'off' || moves === 'calm' ? moves : 'full'
 
     if (!e.isInteractive) return result
+
+    // A reload starts the module over; what was stored is still there.
+    journeyNow = await read($, journeyAtom)
+    tasksNow = await read($, tasksAtom)
+    transfersNow = await read($, transfersAtom)
+    motion = { depth: target().depth, stars: target().isDone ? 1 : 0 }
+
+    await $.command.register({ name: 'inferno', description: words(lang).paneHelp })
+    if ((await $.store.get('pane')) !== 'closed') {
+      void $.ui.open({ id: PANE_ID, title: 'Inferno', columns: PANE_COLUMNS }).catch(() => undefined)
+    }
+    beatTimer?.cancel()
+    if (animation !== 'off') {
+      beatTimer = $.clock.every(BEAT_MS, () => {
+        const due = beat()
+        if (due.pit !== undefined) {
+          void $.ui
+            .blit({ requestId: PANE_ID, key: 'pit', cells: due.pit })
+            .then(painted => {
+              if (painted.deny !== undefined) isPitUp = false
+            })
+            .catch(() => {
+              isPitUp = false
+            })
+        }
+        if (due.rule !== undefined) {
+          void $.ui
+            .blit({ requestId: PINNED_REQUEST_ID, key: 'rule', cells: due.rule })
+            .then(painted => {
+              if (painted.deny !== undefined) ruleColumns = 0
+            })
+            .catch(() => {
+              ruleColumns = 0
+            })
+        }
+      })
+    }
 
     const [version, model, home] = await Promise.all([$.session.version(), $.session.model(), $.env.get('HOME')])
     const cwd = home && e.cwd.startsWith(home) ? `~${e.cwd.slice(home.length)}` : e.cwd
@@ -125,22 +227,67 @@ export const register: Register = on => {
     return { sections: [...result.sections.filter(section => section.id !== VOICE.id), VOICE] }
   })
 
-  // The journey: which circle the current request is in.
+  on('command.run', { command: 'inferno' }, async $ => {
+    const isUp = (await $.ui.panes()).some(one => one.id === PANE_ID && one.isPlaced)
+    if (isUp) {
+      await $.ui.close({ id: PANE_ID })
+      await $.store.set('pane', 'closed')
+      isPitUp = false
+      return { text: words(lang).paneClosed }
+    }
+    await $.store.set('pane', 'open')
+    await $.ui.open({ id: PANE_ID, title: 'Inferno', columns: PANE_COLUMNS })
+    return { text: words(lang).paneOpened }
+  })
+
+  // Closed with its own mark: it stays closed next time too.
+  on('ui.close', { id: 'inferno' }, async ($, e, next) => {
+    isPitUp = false
+    if (e.origin.kind === 'person') await $.store.set('pane', 'closed')
+    return next(e)
+  })
+
+  // A new request: what was finished (or failed) is put away.
+  on('prompt.submit', async ($, e, next) => {
+    journeyNow = await update($, journeyAtom, j => (j !== null && j.endedAt !== null ? null : j))
+    const { total, done } = tally()
+    if (total > 0 && done === total) tasksNow = await update($, tasksAtom, () => NO_TASKS)
+    return next(e)
+  })
+
+  on('turn.start', ($, e, next) => {
+    if (e.agentId === undefined) isWorking = true
+    return next(e)
+  })
+
+  // The journey: which step the current request is in. Other requests: their task list.
   on('tool.call', async ($, e, next) => {
-    const tool = danteTool(e.tool)
+    const isDubbing = e.tool === 'Bash' && isDub(e.tool, e.command)
+    const tool = isDubbing ? 'audio4films' : danteTool(e.tool)
     const step = tool === undefined ? undefined : STEP_OF[tool]
-    if (tool === undefined) return next(e)
+
+    if (tool === undefined) {
+      const ran = await next(e)
+      if (e.agentId === undefined && ran.deny === undefined && ran.isError !== true) {
+        const change = taskChange(e.tool, e, ran.result)
+        if (change !== undefined) {
+          tasksNow = await update($, tasksAtom, list => {
+            const { [change.id]: _, ...rest } = list.all
+            return { ...list, all: change.to === 'gone' ? rest : { ...rest, [change.id]: change.to } }
+          })
+        }
+      }
+      return ran
+    }
 
     if (step !== undefined) {
       const reached = STEPS.indexOf(step)
       const now = await $.clock.now()
       const title = titleOf(tool, e)
-      await update($, journeyAtom, j => {
-        const fresh = j === null || j.endedAt !== null || tool === 'find_title' || (tool === 'search_streams' && j.reached >= 1)
-        const base: Journey = fresh
-          ? { title: title ?? '', reached, status: 'running', startedAt: now, endedAt: null }
-          : { ...j, reached, status: 'running' }
-        return { ...base, title: title ?? base.title, reached: Math.max(reached, fresh ? 0 : base.reached) }
+      journeyNow = await update($, journeyAtom, j => {
+        const isFresh = j === null || j.endedAt !== null || tool === 'find_title'
+        const base: Journey = isFresh ? { title: title ?? '', reached, status: 'running', startedAt: now, endedAt: null } : j
+        return { ...base, title: title ?? base.title, reached, status: 'running', endedAt: null }
       })
       if (stopTicking === undefined) {
         const timer = $.clock.every(1000, () => void update($, tickAtom, t => (t ?? 0) + 1))
@@ -149,26 +296,35 @@ export const register: Register = on => {
     }
 
     const ran = await next(e)
-    const failed = ran.deny !== undefined || ran.isError === true
-    const text = ran.deny === undefined ? outputText(ran.result ?? ran.text) : ''
+    const hasFailed = ran.deny !== undefined || ran.isError === true
 
-    if (step !== undefined) {
+    // Steps Claude declares for a request that is not about a film.
+    const steps = tool === 'progress' && !hasFailed ? declaredSteps(e) : undefined
+    if (steps !== undefined) {
+      journeyNow = await update($, journeyAtom, () => null)
+      tasksNow = await update($, tasksAtom, () => steps)
+    }
+
+    // A dub sent to the background has only started.
+    const isPending = isDubbing && e.tool === 'Bash' && e.run_in_background === true
+
+    if (step !== undefined && !isPending) {
       const now = await $.clock.now()
       const reached = STEPS.indexOf(step)
-      const status: Journey['status'] = failed ? 'failed' : 'done'
-      await update($, journeyAtom, j =>
-        j === null || j.reached !== reached ? j : { ...j, status, endedAt: step === 'play' || failed ? now : null },
+      const status: Journey['status'] = hasFailed ? 'failed' : 'done'
+      journeyNow = await update($, journeyAtom, j =>
+        j === null || j.reached !== reached ? j : { ...j, status, endedAt: step === 'play' || hasFailed ? now : null },
       )
-      if (step === 'play' || failed) {
+      if (step === 'play' || hasFailed) {
         stopTicking?.()
         stopTicking = undefined
       }
     }
 
-    if (!failed) {
-      const rows = parseTransfers(tool, text)
+    if (!hasFailed && ran.deny === undefined) {
+      const rows = parseTransfers(tool, outputText(ran.result ?? ran.text))
       if (rows.length) {
-        await update($, transfersAtom, list => {
+        transfersNow = await update($, transfersAtom, list => {
           const kept = list.filter(r => !rows.some(n => n.service === r.service && n.id === r.id))
           return [...kept, ...rows].slice(-5)
         })
@@ -177,10 +333,12 @@ export const register: Register = on => {
     return ran
   })
 
-  // A new message from the person starts the next journey fresh on the next search.
   on('turn.complete', async ($, e, next) => {
-    stopTicking?.()
-    stopTicking = undefined
+    if (e.agentId === undefined) {
+      isWorking = false
+      stopTicking?.()
+      stopTicking = undefined
+    }
     return next(e)
   })
 
@@ -189,7 +347,7 @@ export const register: Register = on => {
     if (e.props.plugin !== PLUGIN || e.props.id !== HEADER_ID || header === null || e.surface !== 'terminal') {
       return next(e)
     }
-    const { Box, Image, Text } = $.ui.resolve(e)
+    const { Box, Image, Raster, Text } = $.ui.resolve(e)
     const identity = (
       <Box flexDirection="row" height={PORTRAIT.rows}>
         <Image
@@ -219,19 +377,69 @@ export const register: Register = on => {
         </Box>
       )
     }
-    // Pinned: exactly HEADER_ROWS tall, closed by the ember rule the chat scrolls under.
-    const width = Math.max(RULE.length, e.viewport?.columns ?? 80)
-    const part = Math.floor(width / RULE.length)
+    // Pinned: exactly HEADER_ROWS tall, closed by a rule of coals the chat scrolls under. It burns
+    // while Dante works.
+    // The slot is as wide as the terminal, but with a pane docked the viewport is the chat's: draw
+    // the rule at its widest and let the slot cut it.
+    const width = RULE_COLUMNS
+    ruleColumns = width
     return (
       <Box flexDirection="column" height={HEADER_ROWS} overflow="hidden">
         {identity}
-        <Text>
-          {RULE.map((color, i) => (
-            <Text key={`r${i}`} color={color}>
-              {'─'.repeat(i === RULE.length - 1 ? width - part * (RULE.length - 1) : part)}
+        <Raster key="rule" columns={width} rows={1} cells={ruleCells(width)} />
+      </Box>
+    )
+  })
+
+  // The circles of Hell beside the chat.
+  on('ui.render', { component: 'Pane', requestId: 'inferno' }, async ($, e, next) => {
+    if (e.surface !== 'terminal') return next(e)
+    const journey = await read($, journeyAtom)
+    await read($, tasksAtom)
+    await read($, transfersAtom)
+    await read($, tickAtom)
+    const now = await $.clock.now()
+    const { Box, Raster, Text } = $.ui.resolve(e)
+    const w = words(lang)
+    const to = target()
+
+    const columns = Math.min(72, e.props.bodyColumns)
+    const rows = Math.min(64, e.props.scroll.bodyRows - CAPTION_ROWS)
+    const fits = columns >= 24 && rows >= 22
+    if (!fits) pit = undefined
+    else if (pit === undefined || pit.w !== columns || pit.h !== rows * 2) pit = makeScene(columns, rows * 2)
+    const cells = pitCells()
+    isPitUp = cells !== undefined
+    if (animation === 'off') motion = { depth: to.depth, stars: to.isDone ? 1 : 0 }
+
+    const { total, done } = tally()
+    const isIdle = journey === null && total === 0
+    const heading = to.isDone ? w.stars : w.circle(Math.floor(to.depth))
+    const detail =
+      journey !== null
+        ? [w.steps[STEPS[journey.reached] ?? 'title'], journey.title].filter(Boolean).join(' · ')
+        : total > 0
+          ? [w.tasks(done, total), tasksNow.title].filter(Boolean).join(' · ')
+          : ''
+    const foot = to.isDone
+      ? w.verseEnd
+      : journey !== null
+        ? formatDuration((journey.endedAt ?? now) - journey.startedAt)
+        : ''
+    return (
+      <Box flexDirection="column">
+        {cells === undefined ? null : <Raster key="pit" columns={columns} rows={rows} cells={cells} />}
+        <Box marginTop={1} flexDirection="column">
+          {isIdle ? (
+            <Text color={GOLD}>{truncate(w.verseStart, columns)}</Text>
+          ) : (
+            <Text bold color={journey?.status === 'failed' ? EMBER : GOLD}>
+              {truncate(heading, columns)}
             </Text>
-          ))}
-        </Text>
+          )}
+          <Text>{truncate(detail, columns)}</Text>
+          <Text dimColor>{truncate(foot, columns)}</Text>
+        </Box>
       </Box>
     )
   })
@@ -383,7 +591,11 @@ export const register: Register = on => {
               {m.glyph}{' '}
             </Text>
           ))}
-          <Text color={status === 'failed' ? EMBER : GOLD}> {w.circle(reached, w.steps[STEPS[reached] ?? 'title'])}</Text>
+          <Text color={status === 'failed' ? EMBER : GOLD}>
+            {' '}
+            {target().isDone ? w.stars : w.circle(Math.floor(target().depth))}
+          </Text>
+          <Text dimColor> · {w.steps[STEPS[reached] ?? 'title'].toLowerCase()}</Text>
           {journey.title === '' ? null : <Text dimColor> · {truncate(journey.title, width)}</Text>}
           <Text dimColor> · {elapsed}</Text>
         </Box>

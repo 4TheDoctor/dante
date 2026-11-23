@@ -14,7 +14,7 @@ What it looks like (an illustrative reply, not a transcript):
 
 ```text
 $ dante
-◉ ◉ ◉ ○ ○  Third circle: cache · Night of the Living Dead · 6s
+◉ ◉ ◉ ○ ○  Circle VI · Heresy · cache · Night of the Living Dead · 6s
 
 ❧ For Night of the Living Dead (1968) the pick is the 4K remux: 2160p HDR10, untouched
   video, Castilian and English audio, cached on AllDebrid. The 1080p remux is a third of
@@ -40,7 +40,7 @@ Night of the Living Dead (1968): 143 results after ranking, from torrentio (145)
 - **Adds, resolves and plays:** IINA, VLC or mpv, or a "Dante" source inside Stremio on any device (the TV too).
 - **Fills language gaps.** When the best video lacks your language and another release has it, it plans the dub for [audio4films](https://github.com/4TheDoctor/audio4films): synced, lossless, verified.
 - **Full Blu-ray discs (BDMV) with menus:** copies the menu files locally and links the video on the network mount, so the menus are not read over the network. BD-J menus can still be slow in VLC, which is a libbluray limit.
-- **Its own look ("Inferno"):** the laurelled Dante in the header, five circles above the prompt that follow each request (title, search, cache, add, play), and one quiet line per tool. Official Claude Code hooks only; Claude Code itself is not modified. English and Spanish.
+- **Its own look ("Inferno"):** a pixel-art Dante in the header, a burning rule while it works, and one quiet line per tool. Beside the chat, the nine circles of Hell: Dante and Virgil walk down them as the request really advances (title, search, cache, add, play, or the steps of any other request), and come out to see the stars when it is finished. `/inferno` hides or shows them; `animation = "full" | "calm" | "off"` in `dante.toml` sets how much they move. It needs a terminal of 144 columns or more to open by itself. Official Claude Code hooks only; Claude Code itself is not modified. English and Spanish.
 
 ## Install
 

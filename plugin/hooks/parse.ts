@@ -1,5 +1,5 @@
 // Pure helpers: no Claude Code imports, so the test suite can run them.
-import type { TransferRow } from '../types'
+import type { TaskList, TransferRow } from '../types'
 import { words, type Lang, type StepId } from './words'
 
 /** Tools Dante's MCP server adds, whatever prefix Claude Code gives them. */
@@ -14,9 +14,15 @@ export const STEP_OF: Record<string, StepId> = {
   add_to_debrid: 'add',
   get_links: 'add',
   play: 'play',
-  plan_dub: 'play',
+  plan_dub: 'add',
   prepare_bdmv: 'play',
+  // Not a tool of Dante's: the dub itself, run with Bash.
+  audio4films: 'play',
 }
+
+/** The dub runs outside Dante's tools: the command plan_dub hands over. */
+export const isDub = (tool: string, command: unknown): boolean =>
+  tool === 'Bash' && typeof command === 'string' && /(^|[\s;&|])audio4films\s+run\b/.test(command)
 
 type Fields = Record<string, unknown>
 const fieldsOf = (input: unknown): Fields => (typeof input === 'object' && input !== null ? (input as Fields) : {})
@@ -55,6 +61,8 @@ export function targetOf(tool: string, input: unknown, lang: Lang = 'en'): strin
       return [str(f.video_id), str(f.audio_id)].filter(Boolean).join(' + ')
     case 'prepare_bdmv':
       return str(f.source_path) ?? ''
+    case 'progress':
+      return [str(f.title), words(lang).tasks(num(f.done) ?? 0, num(f.total) ?? 0)].filter(Boolean).join(' · ')
     default:
       return str(f.service) ?? ''
   }
@@ -93,3 +101,38 @@ export function parseTransfers(tool: string, text: string): TransferRow[] {
   return []
 }
 
+
+/** "42%" in the newest unfinished transfer -> 0.42; null when no service reports one. */
+export function downloadOf(rows: readonly TransferRow[]): number | null {
+  const last = rows.filter(r => !r.ready).at(-1)
+  const m = last === undefined ? null : /^(\d+)%$/.exec(last.status)
+  return m === null ? null : Number(m[1]) / 100
+}
+
+/** The steps a `progress` call declares. */
+export function declaredSteps(input: unknown): TaskList | undefined {
+  const f = fieldsOf(input)
+  const total = num(f.total)
+  const done = num(f.done)
+  if (total === undefined || done === undefined || total < 1) return undefined
+  const all: TaskList['all'] = {}
+  for (let i = 0; i < total; i++) all[`step${i}`] = i < done ? 'done' : 'open'
+  return { title: str(f.title) ?? '', all }
+}
+
+/** Task list changes: task id -> open or done, or undefined when the call is not about tasks. */
+export function taskChange(tool: string, input: unknown, result: unknown): { id: string; to: 'open' | 'done' | 'gone' } | undefined {
+  const f = fieldsOf(input)
+  if (tool === 'TaskCreate') {
+    const task = fieldsOf(fieldsOf(result).task)
+    const id = str(task.id)
+    return id === undefined ? undefined : { id, to: 'open' }
+  }
+  if (tool === 'TaskUpdate') {
+    const id = str(f.taskId)
+    const status = str(f.status)
+    if (id === undefined || status === undefined) return undefined
+    return { id, to: status === 'completed' ? 'done' : status === 'deleted' ? 'gone' : 'open' }
+  }
+  return undefined
+}

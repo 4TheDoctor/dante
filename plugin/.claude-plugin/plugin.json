@@ -5,5 +5,6 @@
   "author": { "name": "The Doc (4TheDoctor)", "url": "https://github.com/4TheDoctor" },
   "homepage": "https://github.com/4TheDoctor/dante",
   "license": "MIT",
+  "types": "./types/index.d.ts",
   "keywords": ["debrid", "stremio", "media", "mcp"]
 }

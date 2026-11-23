@@ -64,6 +64,7 @@ export function renderConfig(a: Answers): string {
 # Keychain (account "dante"); "env:VAR" reads an environment variable.
 
 ui_language = "en"          # "en" or "es": the words in Dante's interface
+animation = "full"          # full | calm (moves only while working) | off
 
 [preferences]
 resolutions = ["2160p", "1080p"]       # best first

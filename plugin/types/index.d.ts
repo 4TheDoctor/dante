@@ -17,12 +17,19 @@ export type TransferRow = {
   status: string
 }
 
+/** How far a request that is not about a film has got. */
+export type TaskTally = { total: number; done: number }
+
+/** Its steps: declared with Dante's `progress` tool, or from Claude Code's own task list. */
+export type TaskList = { title: string; all: Record<string, 'open' | 'done'> }
+
 declare module 'claude-code' {
   interface PluginState {
     dante: {
       journey: Shaped<Journey | null>
       transfers: Shaped<TransferRow[]>
       tick: number
+      tasks: Shaped<TaskList>
     }
   }
 }

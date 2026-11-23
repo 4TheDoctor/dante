@@ -30,6 +30,8 @@ const engine = z.discriminatedUnion('type', [
 
 const schema = z.object({
   ui_language: z.enum(['en', 'es']).default('en'),
+  /** How much the Inferno moves: all the time, only while working, or not at all. */
+  animation: z.enum(['full', 'calm', 'off']).default('full'),
   preferences: z
     .object({
       resolutions: z.array(resolution).default(['2160p', '1080p']),
