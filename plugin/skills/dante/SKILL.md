@@ -40,8 +40,8 @@ Use when the user wants to find, pick, add or watch a film, an episode, a docume
 2. `search_streams` with the title, year, season and episode.
 3. `check_cache` on the top results that say "cache unknown" (at most 5).
 4. Present the options (see the Output Contract) and recommend one, with its main reason.
-5. On a choice: `play`. If the result is not ready yet: `add_to_debrid`, then `debrid_status`.
-6. For a dub: `plan_dub`, then run the `audio4films run …` command it returns with Bash, and report the verify lines it prints.
+5. On a choice: `play` (a cached result is added to the debrid to play it). If it is not cached: `add_to_debrid`, then `debrid_status`.
+6. For a dub, on a yes: `add_to_debrid` both results, `plan_dub`, then run the `audio4films run …` command it returns with Bash, and report the verify lines it prints.
 
 ## Output Contract
 

@@ -242,7 +242,10 @@ export function rankOne(candidate: Candidate, prefs: Preferences): Ranked | unde
     add(0, '4K without HDR')
   }
 
-  const languages = [...new Set([...fileInfo.languages, ...(folderInfo?.languages ?? []), ...candidate.languages])]
+  const named = [...new Set([...fileInfo.languages, ...(folderInfo?.languages ?? [])])]
+  // Engines read "Español Latino" as both; the name says which one it is.
+  const isLatinOnly = named.includes('lat') && !named.includes('spa')
+  const languages = [...new Set([...named, ...candidate.languages.filter(l => !(isLatinOnly && l === 'spa'))])]
   const multi = info.multi || info.dual || candidate.multiAudio
   let missingLanguage = false
   if (prefs.languages.length) {

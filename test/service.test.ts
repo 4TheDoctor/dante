@@ -115,4 +115,23 @@ alldebrid = "env:Y"
     expect(dante.transfers()).toHaveLength(1)
     expect(calls.some(c => c.url.includes('magnet/upload'))).toBe(true)
   })
+
+  it('never takes one film for another, and adds nothing to get a link', async () => {
+    const titles = ['First.Film.2024.1080p.WEB-DL.Castellano.mkv']
+    const { dante, calls } = make(titles, [
+      ['POST', /magnet\/upload/, () => ({ json: { status: 'success', data: { magnets: [{ id: 5, hash: '0'.repeat(40), name: 'First Film', ready: true }] } } })],
+    ])
+    const first = (await dante.search({ type: 'movie', imdbId: 'tt2', title: 'First Film', year: 2024 })).ranked[0]!.candidate
+    await dante.add(first.id)
+    titles[0] = 'Second.Film.2024.1080p.WEB-DL.Castellano.mkv'
+    const second = (await dante.search({ type: 'movie', imdbId: 'tt3', title: 'Second Film', year: 2024 })).ranked[0]!.candidate
+    expect(second.id).not.toBe(first.id)
+    expect(dante.candidate(first.id).candidate.name).toContain('First')
+    second.infoHash = 'f'.repeat(40)
+    const uploads = () => calls.filter(c => c.url.includes('magnet/upload')).length
+    expect(uploads()).toBe(1)
+    await expect(dante.links(second.id)).rejects.toThrow(/add_to_debrid first/)
+    await expect(dante.links(second.id, undefined, true)).rejects.toThrow(/not known to be cached/)
+    expect(uploads()).toBe(1)
+  })
 })

@@ -204,11 +204,13 @@ export function languagesFromName(spaced: string): string[] {
   const add = (code: string) => {
     if (!found.includes(code)) found.push(code)
   }
+  // "Español Latino" is one language, the Latin American one, not two.
+  const text = spaced.replace(/(?<![\p{L}\p{N}])(?:español|espanol|spanish|esp|spa)[\s()[\]]+(?:latino|latam|lat|latin(?: american?)?)(?![\p{L}\p{N}])/gu, ' latino ')
   for (const [word, code] of Object.entries(WORDS)) {
-    if (hasWord(spaced, word)) add(code)
+    if (hasWord(text, word)) add(code)
   }
   for (const [word, codes] of Object.entries(GROUPS)) {
-    if (hasWord(spaced, word)) codes.forEach(add)
+    if (hasWord(text, word)) codes.forEach(add)
   }
   return found
 }

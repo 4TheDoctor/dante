@@ -110,7 +110,7 @@ export function buildServer(dante = new Dante(loadConfig())): McpServer {
     'get_links',
     {
       description:
-        'Get a direct, playable link for one result (adds it to the debrid if needed). Links expire and belong to the user; do not paste them anywhere public.',
+        'Get a direct, playable link for one result that is already on the debrid (add_to_debrid first). Links expire and belong to the user; do not paste them anywhere public.',
       inputSchema: { id: z.string(), service },
     },
     async ({ id, service: s }) => {
@@ -132,7 +132,7 @@ export function buildServer(dante = new Dante(loadConfig())): McpServer {
     'play',
     {
       description:
-        'Play one result: in a local player (IINA, VLC, mpv), or as a "Dante" source in Stremio on any device in the home network. For an Android TV, Stremio is the way.',
+        'Play the result the user picked: in a local player (IINA, VLC, mpv), or as a "Dante" source in Stremio on any device in the home network. For an Android TV, Stremio is the way. A cached result is added to the debrid to play it; one that is not cached needs add_to_debrid first.',
       inputSchema: {
         id: z.string(),
         player: z.enum(['auto', 'iina', 'vlc', 'mpv', 'stremio']).optional(),
@@ -142,7 +142,7 @@ export function buildServer(dante = new Dante(loadConfig())): McpServer {
     async ({ id, player, service: s }) => {
       try {
         const r = dante.candidate(id)
-        const link = await dante.links(id, s)
+        const link = await dante.links(id, s, true)
         const final = await resolveFinalUrl(link.url)
         const chosen = player ?? dante.config.play.player
         if (chosen === 'stremio') {
@@ -197,7 +197,7 @@ export function buildServer(dante = new Dante(loadConfig())): McpServer {
     'plan_dub',
     {
       description:
-        'Put the audio of one result onto the video of another with audio4films (synced, lossless). Resolves both links and returns the exact command to run. Needs audio4films installed.',
+        'Put the audio of one result onto the video of another with audio4films (synced, lossless). Resolves both links and returns the exact command to run. Both must be on the debrid already (add_to_debrid, once the user said yes). Needs audio4films installed.',
       inputSchema: { video_id: z.string().optional(), audio_id: z.string().optional(), service },
     },
     async ({ video_id, audio_id, service: s }) => {

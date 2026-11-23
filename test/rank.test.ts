@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
+import { parseConfig, toPreferences } from '../src/config.js'
 import { streamToCandidate, type StremioStream } from '../src/engines/stremio-addon.js'
 import { mergeInfo, parseRelease, rank } from '../src/rank.js'
 import type { Candidate, Preferences } from '../src/types.js'
@@ -69,6 +70,22 @@ function fixtureCandidates(): Candidate[] {
   }
   return raw.streams.flatMap((s, i) => streamToCandidate(s, 'torrentio', i) ?? [])
 }
+
+describe('Spanish of Spain and of America', () => {
+  const langs = (name: string, engine: string[] = []): string[] =>
+    rank([{ id: 'x', engine: 't', name, languages: engine, multiAudio: false, cache: {} }], { ...toPreferences(parseConfig('')), languages: ['spa'] })[0]!.languages.sort()
+
+  it.each([
+    ['Film (2026) 2160p Remux HDR HEVC DTS-HD.MA.5.1 Español Latino [X].mkv', ['spa', 'lat'], ['lat']],
+    ['Film.2026.1080p.BluRay.LATINO-X.mkv', ['eng', 'lat'], ['eng', 'lat']],
+    ['Film 2026 1080p Spanish Latino.mkv', ['spa'], ['lat']],
+    ['Film 2026 1080p Castellano Latino Ingles.mkv', ['spa', 'lat'], ['eng', 'lat', 'spa']],
+    ['Film (2026) 2160p English French Spanish.mkv', ['eng', 'spa', 'fre'], ['eng', 'fre', 'spa']],
+    ['Film.2026.2160p.MULTi.mkv', ['lat', 'spa'], ['lat', 'spa']],
+  ])('%s', (name, engine, expected) => {
+    expect(langs(name, engine)).toEqual(expected)
+  })
+})
 
 describe('rank on a real (anonymised) Torrentio answer', () => {
   it('reads flags, size, seeders and the file name from Torrentio streams', () => {

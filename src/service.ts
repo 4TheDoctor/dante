@@ -28,6 +28,8 @@ export interface SearchResult {
 export interface TrackedTransfer extends Transfer {
   service: DebridService
   candidateId: string
+  /** The torrent's info hash: what it is, whatever number a later list gives it. */
+  hash?: string
   addedAt: string
 }
 
@@ -116,6 +118,9 @@ export class Dante {
     const effective = { ...this.prefs, ...prefs }
     // Torznab results carry no season/episode filter of their own; keep the episode asked for.
     const wanted = all.filter(c => matchesEpisode(c, media))
+    // A later list does not reuse the numbers of an earlier one.
+    const nth = this.searches.length + 1
+    if (nth > 1) for (const c of wanted) c.id = `${c.id}/${nth}`
     const ranked = rank(wanted, effective)
     for (const r of ranked) this.candidates.set(r.candidate.id, r)
     const result: SearchResult = { media, ranked, errors, answered, dub: planDub(ranked, effective) }
@@ -160,17 +165,29 @@ export class Dante {
     const source = r.candidate.magnet ?? r.candidate.infoHash
     if (!source) throw new Error(`${id} has no magnet or info hash to add`)
     const transfer = await client.add(source)
-    const tracked: TrackedTransfer = { ...transfer, service: client.service, candidateId: id, addedAt: new Date().toISOString() }
+    const tracked: TrackedTransfer = { ...transfer, service: client.service, candidateId: id, hash: hashOf(r.candidate), addedAt: new Date().toISOString() }
     this.remember(tracked)
     return tracked
   }
 
-  /** A direct URL to play. Uses the engine's own link when it gave one (already resolved). */
-  async links(id: string, service?: DebridService): Promise<DirectLink & { via: string }> {
+  /**
+   * A direct URL to play. Uses the engine's own link when it gave one (already resolved). Adds
+   * nothing to the account unless `mayAdd` says the user picked this result, and then only what is
+   * known to be cached: a download is always asked for with `add`.
+   */
+  async links(id: string, service?: DebridService, mayAdd = false): Promise<DirectLink & { via: string }> {
     const r = this.candidate(id)
     if (r.candidate.url && !service) return { url: r.candidate.url, filename: r.candidate.name, size: r.candidate.size, via: r.candidate.engine }
     const client = await this.debrid(service ?? this.preferredService(r))
-    const tracked = this.transfers().find(t => t.candidateId === id && t.service === client.service)
+    const hash = hashOf(r.candidate)
+    const tracked = hash === undefined ? undefined : this.transfers().find(t => t.hash === hash && t.service === client.service)
+    if (!tracked && !(mayAdd && r.candidate.cache[client.service] === true)) {
+      throw new Error(
+        mayAdd
+          ? `${r.candidate.name} is not known to be cached on ${client.service}: check_cache first, or add_to_debrid to download it`
+          : `${r.candidate.name} is not on ${client.service} yet: add_to_debrid first, once the user has picked it`,
+      )
+    }
     const transfer = tracked ? await client.status(tracked.id) : await this.add(id, client.service)
     if (!transfer.ready) {
       throw new Error(`${r.candidate.name} is not ready on ${client.service} yet (${transfer.status}${transfer.progress !== undefined ? ` ${transfer.progress}%` : ''}). Check again with debrid_status.`)
@@ -225,6 +242,10 @@ export class Dante {
       // State is a convenience; never fail a request over it.
     }
   }
+}
+
+function hashOf(c: Candidate): string | undefined {
+  return (c.infoHash ?? /btih:([a-z0-9]+)/i.exec(c.magnet ?? '')?.[1])?.toLowerCase()
 }
 
 /** Keep results for the episode asked for (or packs that include it). Films pass through. */
