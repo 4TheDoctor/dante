@@ -77,19 +77,12 @@ export const VIRGIL: readonly Sprite[] = FEET.map(feet => [...VIRGIL_BODY, ...fe
 export const MAGNET: Sprite = art('.KKKKKKK.', 'KRRRRRRRK', 'KRRKKKRRK', 'KRRK.KRRK', 'KrRK.KrRK', 'KWWK.KWWK', 'KWWK.KWWK', '.KK...KK.')
 export const FILE: Sprite = art('KKKKKK..', 'KWWWWTK.', 'KWWgWWTK', 'KWWgWWWK', 'KWgggWWK', 'KWWgWWWK', 'KWWWWWWK', 'KKKKKKKK')
 export const REEL: Sprite = art('..KKKKK..', '.KMMMMMK.', 'KMMKMKMMK', 'KMKMMMKMK', 'KMMMKMMMK', 'KMKMMMKMK', 'KMMKMKMMK', '.KMMMMMK.', '..KKKKK..')
-/** Those who give, and those who only take. */
-export const SEEDER: Sprite = art('....g....', '...ggg...', '..ggggg..', '.gDDDDDg.', '...gDg...', '..KgggK..', '.ggKgKgg.', 'gg.ggg.gg', '...ggg...', '..gg.gg..', '..ee.ee..')
-export const LEECHER: Sprite = art('...aaa...', '..KaaaK..', '...aaa...', '.aaaaaaa.', '..aaaaa..', '...aaa...', '.aa.a.aa.', 'aa.aaa.aa', '...aaa...', '..aa.aa..', '..rr.rr..')
+/** Given, and taken: the arrows of every torrent client. */
+export const UP: Sprite = art('......K......', '.....KgK.....', '....KgDgK....', '...KgDDgeK...', '..KgDDDggeK..', '.KgDDDDgggeK.', 'KKKKKgDgeKKKK', '....KgDgeK...', '....KgDgeK...', '....KgDgeK...', '....KgggeK...', '....KKKKKK...')
+export const DOWN: Sprite = art('....KKKKKK...', '....KaaarK...', '....KaHarK...', '....KaHarK...', '....KaHarK...', 'KKKKKaHarKKKK', '.KaHHHHaaarK.', '..KaHHHaarK..', '...KaHHarK...', '....KaHrK....', '.....KaK.....', '......K......')
 export const CRATE: Sprite = art('KKKKKKKKKKK', 'KyyyyyyyyyK', 'KyzzzzzzzyK', 'KyzyzzzyzyK', 'KyzzyzyzzyK', 'KyzzzyzzzyK', 'KyzzyzyzzyK', 'KyzyzzzyzyK', 'KyyyyyyyyyK', 'KKKKKKKKKKK')
-/** A release in the cache, and one that is not. */
-export const CACHED: Sprite = art('...ggg.....', '..gDDDgg...', '.gDDDDDDgg.', 'gDDDDDDeDDg', 'gDDeDDeDDDg', 'gDDDeeDDDDg', '.gDDDeDDDg.', '..ggggggg..')
-export const UNCACHED: Sprite = art('...mmm.....', '..mMMMmm...', '.mMMMMMMmm.', 'mMMmMMMmMMm', 'mMMMmMmMMMm', 'mMMMMmMMMMm', '.mMMmMmMMm.', '..mmmmmmm..')
 /** Here lies a file. */
 export const TOMB: Sprite = art('...KKKKK...', '.KKMMMMMKK.', 'KMMMKKKMMMK', 'KMMKMMMKMMK', 'KMKMMKKMKMK', 'KMKMKMMMKMK', 'KMKMMKKMKMK', 'KMMKMMMKMMK', 'KMMMKKKMMMK', 'KMMMMMMMMMK', 'KmMMMMMMMmK', 'KmmmmmmmmmK')
-export const KEY_RING: Sprite = art('.yyy......', 'yy.yyyyyyy', 'y...y..y.y', 'yy.yy..z..', '.yyy......')
-export const DRONE: readonly Sprite[] = ['mmmmmm.........mmmmmm', '..mmm...........mmm..'].map(rotors =>
-  art(rotors, '..K...............K..', '..KMMMMMMMMMMMMMMMK..', '.....KpppppppppK.....', '.....KpIIpppIIpK.....', '.....KpppppppppK.....', '......KKKKKKKKK......'),
-)
 export const CAR: Sprite = art('.......VVVVVVVV...........', '.....VVbbVbbbbVVV.........', '....VVbbbVbbbbbVVVV.......', 'VVVVVVVVVVVVVVVVVVVVVVVVV.', 'VaVVVVVVVVVVVVVVVVVVVVVVyV', 'VVVVmmmVVVVVVVVVVmmmVVVVVV', '...mKKKm........mKKKm.....', '....mmm..........mmm......')
 export const POPCORN: Sprite = art('.W.WyW.W.', 'WyWWWyWWW', '.WWyWWWy.', 'aWaWaWaWa', 'aWaWaWaWa', '.WaWaWaW.', '.aWaWaWa.', '.aWaWaWa.')
 
@@ -118,96 +111,6 @@ export const FERRYMAN: Sprite = art(
   'cCCCCCcCCc.',
   'cCCCCCCCCc.',
 )
-
-const recast = (rows: Sprite, from: string, to: string): Sprite => rows.map(row => [...row].map(letter => { const n = from.indexOf(letter); return n < 0 ? letter : to[n]! }).join(''))
-
-/** The judge of the second circle: an indexer with a crown. */
-export const MINOS: Sprite = recast(art(
-  '.....GG.GG.GG....',
-  '.....GGGGGGGG....',
-  '.....xXXXXXXx....',
-  '.....xXEXXEXx....',
-  '.....xXXXXXXx....',
-  '.....xWWWWWWx....',
-  '....xxXWWWWXxx...',
-  '...xXXXXWWXXXXx..',
-  '..xXXxXXXXXXxXXx.',
-  '..xXXxXXXXXXxXXx.',
-  '..xXx.xXXXXx.xXx.',
-  '...xx.xXXXXx.xx..',
-  '......xXXXXx.....',
-  '.....xXXXXXXx....',
-  '....xXXxxxxXXx...',
-  '....xXXx..xXXx...',
-  '...xXXXx..xXXXx..',
-  '...xxxxx..xxxxx..',
-), 'xXEWG', 'mMypy')
-
-/** Three heads, three trackers. */
-export const CERBERUS: readonly Sprite[] = [
-  art(
-    '..f.f...f.f...f.f.............',
-    '..fff...fff...fff.............',
-    '.fFFFf.fFFFf.fFFFf............',
-    '.fEFEf.fEFEf.fEFEf............',
-    'fFFFFfffFFFFffFFFFf.........f.',
-    'KWKWFFFKWKWFFFKWKFFf.......fF.',
-    '.fFFFFFfFFFFFFfFFFFFf.....fF..',
-    '..fffFFFFFFFFFFFFFFFFfffffFf..',
-    '.....fFFFFFFFFFFFFFFFFFFFFf...',
-    '......fFFFFFFFFFFFFFFFFFFFf...',
-    '......fFFffFFFFFFFFFffFFFf....',
-    '......fFf.fFFf...fFFf.fFFf....',
-    '......fFf..fFf...fFf...fFf....',
-    '.....ffff.ffff..ffff..ffff....',
-  ),
-  art(
-    '..............................',
-    '..f.f...f.f...f.f.............',
-    '..fff...fff...fff.........f...',
-    '.fFFFf.fFFFf.fFFFf........fF..',
-    '.fEFEf.fEFEf.fEFEf.........fF.',
-    'fFFFFfffFFFFffFFFFf........fF.',
-    'KWKWKFFKWKWKFFKWKFFf......fF..',
-    'fWFWFFFfWFWFFFfFFFFFfffffFFf..',
-    '.ffffFFFFFFFFFFFFFFFFFFFFFf...',
-    '......fFFFFFFFFFFFFFFFFFFFf...',
-    '......fFFffFFFFFFFFFffFFFf....',
-    '.......fFf.fFf..fFf..fFFf.....',
-    '.......fFf.fFf..fFf...fFf.....',
-    '......ffff.ffff.ffff.ffff.....',
-  ),
-].map(rows => recast(rows, 'fFE', 'mMD'))
-
-/** Geryon: a serpent of network cable, a plug for a face. */
-export const GERYON: readonly Sprite[] = [
-  art(
-    '..........qqq...................',
-    '..SS.....qQQQq..................',
-    '.SSKS...qQQQQQq.................',
-    '.SSSS..qQQQQQQQq................',
-    '..SSQqqQQQQqQQQQqq..............',
-    '..qQQQQQQQqQQqQQQQq..........q..',
-    '...qQQQQQqQQQQqQQQQqq......qqQq.',
-    '....qqQQQQQQQQQqQQQQQqq..qqQQq..',
-    '..q..q.qqQQQQQQQQQQQQQQqqQQqq...',
-    '..qq.q...qqqQQQQQQQQQQQQQqq.....',
-    '...q.qq.....qqqqQQQQQqqq........',
-  ),
-  art(
-    '................................',
-    '..SS............................',
-    '.SSKS...........................',
-    '.SSSS....qqqqqq.................',
-    '..SSQqqqqQQQQQQqq............q..',
-    '..qQQQQQQQQqQQqQQqq.........qQq.',
-    '...qQQQQQqQQQQqQQQQqq......qQQq.',
-    '....qqQQqQQQQQQqQQQQQqq..qqQQq..',
-    '..q..qqQQQQQQQQQQQQQQQQqqQQqq...',
-    '..qq.qQQQqqqQQQQQQQQQQQQQqq.....',
-    '...q.qqqq...qqqqQQQQQqqq........',
-  ),
-].map(rows => recast(rows, 'qQS', 'bip'))
 
 export interface Canvas {
   w: number
@@ -248,6 +151,15 @@ const BIG: Record<string, string> = {
   D: '11110100011000110001100011000111110', A: '01110100011000111111100011000110001',
   N: '10001110011010110011100011000110001', T: '11111001000010000100001000010000100',
   E: '11111100001000011110100001000011111',
+  B: '11110100011000111110100011000111110',
+  C: '01110100011000010000100001000101110',
+  G: '01110100011000010111100011000101110',
+  I: '01110001000010000100001000010001110',
+  K: '10001100101010011000101001001010001',
+  O: '01110100011000110001100011000101110',
+  R: '11110100011000111110101001001010001',
+  V: '10001100011000110001100010101000100',
+  '&': '01100100101010001000101011001001101',
 }
 
 /** Capitals without accents, as the alphabet has them. */
@@ -275,7 +187,7 @@ export function write({ w, h, px }: Canvas, text: string, x: number, y: number, 
   return at
 }
 
-/** One of the five letters of DANTE, 5 x 7. */
+/** A letter of the name, 5 x 7. */
 export function writeBig({ w, h, px }: Canvas, letter: string, x: number, y: number, color: number): void {
   const glyph = BIG[letter] ?? ''
   for (let i = 0; i < glyph.length; i++) {

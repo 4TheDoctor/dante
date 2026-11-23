@@ -29,7 +29,7 @@ const LAUREL = '#8FB65A'
 // The circles of Hell, drawn beside the chat (inferno.ts) and repainted in place on this beat.
 const PANE_ID = 'inferno'
 const PANE_COLUMNS = 46
-const CAPTION_ROWS = 8
+const CAPTION_ROWS = 2
 /** The widest a Raster may be. */
 const RULE_COLUMNS = 512
 const BEAT_MS = 100
@@ -205,7 +205,7 @@ export const register: Register = on => {
 
   const helperState = (): string => {
     const to = target()
-    return JSON.stringify({ depth: to.depth, mood: to.mood, isDone: to.isDone, pace: animation, labels: { circles: words(lang).circles, ask: words(lang).ask, ...marks(), ...numbers() } })
+    return JSON.stringify({ depth: to.depth, mood: to.mood, isDone: to.isDone, pace: animation, labels: { circles: words(lang).circles, ...marks(), ...numbers() } })
   }
 
   // What the helper needs this beat: to start, to be told something, or to stop.
@@ -571,48 +571,20 @@ export const register: Register = on => {
     isPitUp = cells !== undefined
     if (animation === 'off') motion = { depth: to.depth, stars: to.isDone ? 1 : 0 }
 
+    // One line: what the numbers cut in the rock are.
     const { total, done } = tally()
-    const isIdle = journey === null && total === 0
-    const heading = to.isDone ? w.stars : isIdle ? (isWorking ? w.gate : w.verseStart) : w.circle(Math.max(0, Math.floor(to.depth)))
-    const foot = to.isDone
-      ? w.verseEnd
-      : journey !== null
-        ? formatDuration((journey.endedAt ?? now) - journey.startedAt)
+    const said =
+      journey !== null
+        ? w.found(journey.facts, journey.title)
         : total > 0
-          ? [w.tasks(done, total), tasksNow.title].filter(Boolean).join(' · ')
-          : ''
-    const { lit, now: at } = marks()
-    const found = journey === null ? [] : w.found(journey.facts, journey.title)
-    const room = Math.max(8, columns - 14)
+          ? [w.tasks(done, total), tasksNow.title]
+          : []
+    const line = to.isDone ? w.verseEnd : said.filter(Boolean).join(' · ')
     return (
       <Box flexDirection="column">
         {picture === undefined ? null : <Image key="pit" source={picture} columns={columns} rows={rows} alt="Inferno" />}
         {cells === undefined ? null : <Raster key="pit" columns={columns} rows={rows} cells={cells} />}
-        <Box marginTop={1} flexDirection="column">
-          <Text bold={!isIdle} color={journey?.status === 'failed' ? EMBER : GOLD}>
-            {truncate(heading, columns)}
-          </Text>
-          {STEPS.map((step, i) => {
-            const isLit = lit[i] === true
-            const isNow = at === i
-            return (
-              <Box key={step} flexDirection="row">
-                <Text bold={isLit || isNow} color={isLit ? GOLD : isNow ? EMBER : undefined} dimColor={!isLit && !isNow}>
-                  {'DANTE'.charAt(i)}{'  '}
-                </Text>
-                {journey === null ? (
-                  <Text dimColor={!isLit}>{DANTE[i]}</Text>
-                ) : (
-                  <Text dimColor={!isLit && !isNow}>
-                    {w.steps[step].padEnd(11)}
-                    {truncate(found[i] ?? '', room)}
-                  </Text>
-                )}
-              </Box>
-            )
-          })}
-          <Text dimColor>{truncate(foot, columns)}</Text>
-        </Box>
+        <Text color={journey?.status === 'failed' ? EMBER : GOLD}>{truncate(line, columns)}</Text>
       </Box>
     )
   })

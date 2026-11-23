@@ -56,25 +56,26 @@ describe('the high-resolution pit', () => {
     expect(pit.isSettled(goal(7))).toBe(false)
   })
 
-  it('fills the river with the download, and lights a cloud for each cached release', () => {
+  it('fills the river with the download, and lights the bolt only when something is cached', () => {
     const count = (percent: number, cached: number): [number, number] => {
       const pit = new Pit(161, 396)
-      pit.labels = { circles: [], title: '', ask: '', facts: [], lit: [], now: -1, percent, checked: 4, cached }
+      pit.labels = { circles: [], title: '', facts: [], lit: [], now: -1, percent, checked: 4, cached }
       const px = pit.frame(goal(-1, 'idle'), 0)
-      return [px.filter(c => c === SPOT.greenDark).length, px.filter(c => c === SPOT.led).length]
+      return [px.filter(c => c === SPOT.greenDark).length, px.filter(c => c === SPOT.star).length]
     }
     const [empty] = count(0, 0)
     const [half] = count(50, 0)
     const [full] = count(100, 0)
     expect(empty).toBeLessThan(half)
     expect(half).toBeLessThan(full)
-    expect(count(0, 0)[1]).toBeLessThan(count(0, 2)[1])
+    expect(count(0, 0)[1]).toBe(0)
+    expect(count(0, 2)[1]).toBeGreaterThan(0)
   })
 
   it('has sprites with rows of one width', () => {
     const isSprite = (value: unknown): value is readonly string[] => Array.isArray(value) && value.every(row => typeof row === 'string')
     const all = Object.values(sprites).flatMap(value => (isSprite(value) ? [value] : Array.isArray(value) ? value.filter(isSprite) : []))
-    expect(all.length).toBeGreaterThan(20)
+    expect(all.length).toBeGreaterThan(15)
     for (const one of all) expect(new Set(one.map(row => row.length)).size).toBe(1)
   })
 })
@@ -94,7 +95,7 @@ describe('what is cut in the rock', () => {
   it('changes with the request, and no label at all is fine too', () => {
     const pit = new Pit(161, 396)
     const plain = pit.frame(goal(-1, 'idle'), 0).slice()
-    pit.labels = { circles: ['Limbo'], title: 'Example', ask: '', facts: ['1968'], lit: [true], now: 1 }
+    pit.labels = { circles: ['Limbo'], title: 'Example', facts: ['1968'], lit: [true], now: 1 }
     expect(pit.frame(goal(-1, 'idle'), 0)).not.toEqual(plain)
   })
 })

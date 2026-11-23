@@ -16,11 +16,7 @@ type Words = {
   /** The nine circles of the download, top to bottom. */
   circles: readonly string[]
   circle: (depth: number) => string
-  gate: string
-  /** The marquee, with nothing asked. */
-  ask: string
   stars: string
-  verseStart: string
   verseEnd: string
   tasks: (done: number, total: number) => string
   /** What each step found, one for each of the five. */
@@ -39,10 +35,7 @@ const en: Words = {
   steps: { title: 'Title', search: 'Search', cache: 'Cache', add: 'Add', play: 'Play' },
   circles: ['Catalogue', 'Indexers', 'Trackers', 'Seeders', 'Cache', 'Firewall', 'Debrid', 'Links', 'Player'],
   circle: depth => `Circle ${ROMAN[depth] ?? ''} · ${en.circles[depth] ?? ''}`,
-  gate: 'Before the gate',
-  ask: "What's on tonight?",
   stars: 'Under the stars',
-  verseStart: 'Midway upon the journey of your watchlist',
   verseEnd: 'And thence we came forth to see the film',
   tasks: (done, total) => `${done} of ${total} steps`,
   found: (f, title) => [
@@ -88,10 +81,7 @@ const es: Words = {
   steps: { title: 'Título', search: 'Búsqueda', cache: 'Caché', add: 'Añadir', play: 'Reproducir' },
   circles: ['Catálogo', 'Indexadores', 'Trackers', 'Semillas', 'Caché', 'Cortafuegos', 'Debrid', 'Enlaces', 'Reproductor'],
   circle: depth => `Círculo ${ROMAN[depth] ?? ''} · ${es.circles[depth] ?? ''}`,
-  gate: 'Ante la puerta',
-  ask: '¿Qué vemos hoy?',
   stars: 'Bajo las estrellas',
-  verseStart: 'En mitad del camino de tu lista',
   verseEnd: 'Y de allí salimos a ver la película',
   tasks: (done, total) => `${done} de ${total} pasos`,
   found: (f, title) => [
