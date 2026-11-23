@@ -724,8 +724,8 @@ export const register: Register = on => {
       <Box flexDirection="column">
         {picture === undefined ? null : <Image key="pit" source={{ file: picture.file, format: picture.format, generation: picture.generation }} columns={columns} rows={rows} alt="Inferno" />}
         {cells === undefined ? null : <Raster key="pit" columns={columns} rows={rows} cells={cells} />}
-        <Text color={to.mood === 'failed' ? EMBER : GOLD} wrap={to.mood === 'failed' && rehearsal === undefined ? 'wrap' : 'truncate-end'}>
-          {truncate(line, to.mood === 'failed' && rehearsal === undefined ? columns * CAPTION_ROWS - 8 : columns)}
+        <Text color={to.mood === 'failed' ? EMBER : GOLD} wrap={rehearsal === undefined ? 'wrap' : 'truncate-end'}>
+          {truncate(line, rehearsal === undefined ? columns * CAPTION_ROWS - 8 : columns)}
         </Text>
         {rehearsal === undefined ? null : (
           <Box flexDirection="row">
