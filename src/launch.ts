@@ -3,7 +3,7 @@ import { accessSync, constants, copyFileSync, existsSync, mkdirSync } from 'node
 import { homedir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { configPath, danteHome } from './config.js'
+import { configPath, danteHome, loadConfig } from './config.js'
 
 /** The installed package: dist/ sits next to plugin/ and template/. */
 export function packageRoot(): string {
@@ -75,12 +75,18 @@ export async function launch(extra: string[]): Promise<number> {
   }
   const { installTheme } = await import('./setup.js')
   installTheme()
+  let lang = 'en'
+  try {
+    lang = loadConfig(home).ui_language
+  } catch {
+    // A broken dante.toml is reported by the MCP server and doctor; the look falls back to English.
+  }
   process.chdir(home)
   const tty = process.stdout.isTTY && !process.env.DANTE_NO_BACKDROP
   if (tty) process.stdout.write(`\x1b]11;${BACKDROP}\x07`)
   const child = spawn(claude, claudeArgs(extra), {
     stdio: 'inherit',
-    env: { ...process.env, DANTE_HOME: home },
+    env: { ...process.env, DANTE_HOME: home, DANTE_UI_LANG: lang },
   })
   // Claude Code reads Ctrl+C itself; this process only waits for it.
   const ignore = () => {}
