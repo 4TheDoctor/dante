@@ -193,6 +193,14 @@ describe('which film a request is about', () => {
     expect(await chooseFilm({ ...ask, title: '' }, nameOf)).toBeUndefined()
   })
 
+  it('shows the film of a request that has no title of its own, such as playing one more episode', async () => {
+    const nameOf = async (): Promise<string> => ''
+    const seen = [{ id: 'tt0000001', name: 'Example Show' }]
+    expect(await chooseFilm({ title: '', current: 'tt0000001', seen, isSearch: true }, nameOf)).toEqual({ id: 'tt0000001', caption: '' })
+    expect(await chooseFilm({ title: '', current: null, seen, isSearch: true }, nameOf)).toBeUndefined()
+    expect(await chooseFilm({ title: '', current: 'tt0000001', seen, isSearch: false }, nameOf)).toBeUndefined()
+  })
+
   it('takes the film searched for when the title says it in another language', async () => {
     const nameOf = async (): Promise<string> => {
       throw new Error('no network')

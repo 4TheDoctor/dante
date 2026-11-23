@@ -30,7 +30,8 @@ export function captionOf(title: string, name: string): string {
 
 /** The film, and what to write under its logo. */
 export async function chooseFilm(ask: Ask, nameOf: (id: string) => Promise<string>): Promise<{ id: string; caption: string } | undefined> {
-  if (ask.title === '') return undefined
+  // A search can lack a title and still be about a film: playing one more episode after the first.
+  if (ask.title === '' && !(ask.isSearch && ask.current !== null)) return undefined
   const named = await Promise.all([...ask.seen].reverse().map(async film => ({ id: film.id, name: film.name || (await nameOf(film.id).catch(() => '')) })))
   const current = named.find(film => film.id === ask.current) ?? (ask.current === null ? undefined : { id: ask.current, name: await nameOf(ask.current).catch(() => '') })
   // "Dune: Part Two" names "Dune" too: the longest name is the one meant.
