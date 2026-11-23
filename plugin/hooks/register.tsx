@@ -13,9 +13,18 @@ const PLUGIN = 'dante'
 const VERSION = '0.1.0'
 const HEADER_ID = 'header'
 
+// Stock Claude Code has no fixed slot at the top of the terminal, so the header is placed as a
+// transcript row. A build that has one (DANTE_PINNED_HEADER=1) asks for a `Placed` drawing of this
+// plugin's "header" under this requestId, HEADER_ROWS tall; it stays put while the chat scrolls.
+const PINNED_REQUEST_ID = 'dante-header'
+const HEADER_ROWS = 5
+const PORTRAIT = { columns: 10, rows: 4 } as const
+
 const EMBER = '#D9452B'
 const GOLD = '#D4A24C'
 const LAUREL = '#8FB65A'
+/** The rule that closes the pinned header: from deep ember to gold. */
+const RULE = ['#8E2418', '#B8352A', EMBER, '#F07A4D', GOLD] as const
 
 // Literals on purpose: Claude Code scans these references before running the module.
 const journeyAtom = atom({ plugin: 'dante', key: 'journey' } as const, null, { shape: 'journey-1' })
@@ -73,19 +82,42 @@ export const register: Register = on => {
   let header: Header | null = null
   let lang: Lang = 'en'
   let stopTicking: (() => void) | undefined
+  // Whether this build pins the header, and which layout the terminal draws (learnt from the
+  // prompt hint's viewport). The main screen has no pinned slot.
+  let isPinned = false
+  let isFullscreen: boolean | undefined
+  let isPlaced = false
+
+  // True once, when the header should become a transcript row.
+  const claimPlacement = (): boolean => {
+    if (header === null || isPlaced || (isPinned && isFullscreen !== false)) return false
+    isPlaced = true
+    return true
+  }
 
   on('session.start', async ($, e, next) => {
     const result = await next(e)
     const wanted = await $.env.get('DANTE_UI_LANG')
     lang = wanted === 'es' ? 'es' : 'en'
+    isPinned = (await $.env.get('DANTE_PINNED_HEADER')) === '1'
 
     if (!e.isInteractive) return result
 
     const [version, model, home] = await Promise.all([$.session.version(), $.session.model(), $.env.get('HOME')])
     const cwd = home && e.cwd.startsWith(home) ? `~${e.cwd.slice(home.length)}` : e.cwd
     header = { version: version.base ?? version.version, model: displayModel(model), cwd }
-    await $.ui.place({ id: HEADER_ID })
+    // The pinned header may have drawn blank before this point.
+    $.ui.invalidate('ui.render')
+    if (claimPlacement()) await $.ui.place({ id: HEADER_ID })
     return result
+  })
+
+  on('ui.render', { component: 'PromptHint' }, async ($, e, next) => {
+    if (e.surface === 'terminal' && isFullscreen === undefined && e.viewport?.isFullscreen !== undefined) {
+      isFullscreen = e.viewport.isFullscreen
+      if (claimPlacement()) await $.ui.place({ id: HEADER_ID })
+    }
+    return next(e)
   })
 
   on('prompt.compose', async ($, e, next) => {
@@ -158,10 +190,15 @@ export const register: Register = on => {
       return next(e)
     }
     const { Box, Image, Text } = $.ui.resolve(e)
-    return (
-      <Box flexDirection="row" paddingY={1}>
-        <Image source={{ file: `${$.plugin.root}/art/dante.png`, format: 'png' }} columns={10} rows={4} alt="Dante" />
-        <Box flexDirection="column" paddingLeft={2}>
+    const identity = (
+      <Box flexDirection="row" height={PORTRAIT.rows}>
+        <Image
+          source={{ file: `${$.plugin.root}/art/dante.png`, format: 'png' }}
+          columns={PORTRAIT.columns}
+          rows={PORTRAIT.rows}
+          alt="Dante"
+        />
+        <Box flexDirection="column" justifyContent="center" paddingLeft={2}>
           <Text>
             <Text bold color={EMBER}>
               DANTE
@@ -173,6 +210,28 @@ export const register: Register = on => {
             Claude Code {header.version} · {header.cwd}
           </Text>
         </Box>
+      </Box>
+    )
+    if (e.requestId !== PINNED_REQUEST_ID) {
+      return (
+        <Box flexDirection="column" paddingY={1}>
+          {identity}
+        </Box>
+      )
+    }
+    // Pinned: exactly HEADER_ROWS tall, closed by the ember rule the chat scrolls under.
+    const width = Math.max(RULE.length, e.viewport?.columns ?? 80)
+    const part = Math.floor(width / RULE.length)
+    return (
+      <Box flexDirection="column" height={HEADER_ROWS} overflow="hidden">
+        {identity}
+        <Text>
+          {RULE.map((color, i) => (
+            <Text key={`r${i}`} color={color}>
+              {'─'.repeat(i === RULE.length - 1 ? width - part * (RULE.length - 1) : part)}
+            </Text>
+          ))}
+        </Text>
       </Box>
     )
   })
