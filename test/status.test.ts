@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { gaugeOf, INK, levelColor, modelPieces, parseStatus, pathPieces, tilesOf, tilesThatFit, type Status } from '../plugin/hooks/status'
 import { words } from '../plugin/hooks/words'
-import { launchSettings } from '../src/launch.js'
+import { launchSettings, lookEnv } from '../src/launch.js'
 
 const PAYLOAD = {
   cwd: join(homedir(), 'Dante'),
@@ -106,6 +106,9 @@ describe('the figures in the header', () => {
 describe('what Claude Code is told', () => {
   it('moves the status line up only where the header stays put', () => {
     expect(launchSettings(false)).toEqual({ theme: 'custom:dante', verbose: false })
+    // What a session sent to the background keeps of how it was opened.
+    expect(launchSettings(false, { DANTE_UI_LANG: 'es' })).toEqual({ theme: 'custom:dante', verbose: false, env: { DANTE_UI_LANG: 'es' } })
+    expect(launchSettings(true, { DANTE_RUN: '/run' })).toMatchObject({ tui: 'fullscreen', env: { DANTE_RUN: '/run' } })
     const pinned = launchSettings(true)
     expect(pinned).toMatchObject({ theme: 'custom:dante', tui: 'fullscreen', statusLine: { type: 'command' } })
     const { command } = (pinned as { statusLine: { command: string } }).statusLine
@@ -113,5 +116,27 @@ describe('what Claude Code is told', () => {
     const ran = spawnSync('sh', ['-c', command], { input: JSON.stringify(PAYLOAD), encoding: 'utf8', env: { ...process.env, DANTE_RUN: run } })
     expect([ran.stdout, ran.stderr, readdirSync(run)]).toEqual(['', '', ['status.json']])
     rmSync(run, { recursive: true })
+  })
+
+  it('keeps each session\'s figures apart, in a folder it makes again when it is gone', () => {
+    const run = join(mkdtempSync(join(tmpdir(), 'dante-feed-')), 'gone')
+    const send = (session_id: string) => spawnSync(process.execPath, ['dist/feed.js'], { input: JSON.stringify({ ...PAYLOAD, session_id }), encoding: 'utf8', env: { ...process.env, DANTE_RUN: run } })
+    send('0a1b-2c')
+    send('3d4e-5f')
+    send('../../elsewhere')
+    expect(readdirSync(run).sort()).toEqual(['0a1b-2c.json', '3d4e-5f.json', 'status.json'])
+  })
+
+  it('tells Claude Code that the terminal shows pictures only where that is known', () => {
+    const cell = () => '7x18'
+    const pictures = { DANTE_GRAPHICS: 'image', DANTE_CELL: '7x18' }
+    const forced = { ...pictures, CLAUDE_CODE_FORCE_TERMINAL_IMAGES: '1' }
+    expect(lookEnv('auto', cell, { TERM: 'xterm-ghostty' })).toEqual(forced)
+    expect(lookEnv('auto', cell, { TERM_PROGRAM: 'ghostty', TERM: 'xterm-256color' })).toEqual(forced)
+    expect(lookEnv('image', cell, {})).toEqual(forced)
+    // An old kitty cannot place them in the text: Claude Code asks its version itself.
+    expect(lookEnv('auto', cell, { TERM: 'xterm-kitty' })).toEqual(pictures)
+    expect(lookEnv('auto', cell, { TERM: 'xterm-ghostty', TMUX: '/tmp/x' })).toEqual({ DANTE_GRAPHICS: 'blocks' })
+    expect(lookEnv('blocks', cell, { TERM: 'xterm-ghostty' })).toEqual({ DANTE_GRAPHICS: 'blocks' })
   })
 })

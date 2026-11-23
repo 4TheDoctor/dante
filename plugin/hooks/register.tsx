@@ -416,7 +416,7 @@ export const register: Register = on => {
     const runDir = await $.env.get('DANTE_RUN')
     if (runDir) {
       $.clock.every(FIGURES_POLL_MS, async () => {
-        const text = await $.fs.read(`${runDir}/status.json`).catch(() => '')
+        const text = await $.fs.read(`${runDir}/${await $.session.id()}.json`).catch(() => '')
         if (text === '' || text === figuresText) return
         figuresText = text
         figures = parseStatus(text) ?? figures

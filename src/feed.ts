@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 // The status line command while Dante's header is pinned. Claude Code pipes it the JSON it gives any
-// status line; this leaves the figures in $DANTE_RUN/status.json for the mod, which draws them in
+// status line; this leaves the figures in $DANTE_RUN/<session>.json for the mod, which draws them in
 // the header, and prints nothing, so the row under the prompt stays empty.
 //
 // Every figure is Claude Code's own; "left" is 100 minus its used percentage.
 import { execFileSync } from 'node:child_process'
-import { readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
@@ -16,6 +16,7 @@ interface Limit {
 }
 
 interface Payload {
+  session_id?: string
   cwd?: string
   workspace?: { current_dir?: string }
   model?: { display_name?: string }
@@ -78,8 +79,11 @@ function figures(input: Payload) {
 const run = process.env.DANTE_RUN
 if (run) {
   try {
-    const file = join(run, 'status.json')
-    writeFileSync(`${file}.new`, JSON.stringify(figures(JSON.parse(readFileSync(0, 'utf8')) as Payload)))
+    const input = JSON.parse(readFileSync(0, 'utf8')) as Payload
+    // Sessions opened from one another share the folder, and one left in the background outlives it.
+    const file = join(run, `${/^[\w-]+$/.test(input.session_id ?? '') ? input.session_id : 'status'}.json`)
+    mkdirSync(run, { recursive: true, mode: 0o700 })
+    writeFileSync(`${file}.new`, JSON.stringify(figures(input)))
     renameSync(`${file}.new`, file)
   } catch {
     // Nothing to read, or the session is over: the header keeps what it had.

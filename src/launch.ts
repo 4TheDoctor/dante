@@ -54,17 +54,20 @@ const shellQuoted = (text: string): string => `'${text.replace(/'/g, `'\\''`)}'`
  * Claude Code's settings for this session only. With a pinned header the status line's figures go up
  * there (feed.ts) and the row under the prompt stays empty. Anywhere else the header scrolls away, so
  * the person's own status line stays as it is.
+ *
+ * `env` goes along in them: a session sent to the background (the agents view) is another process,
+ * started by a service that keeps the settings but not the environment it was opened with.
  */
-export function launchSettings(isPinned: boolean): Record<string, unknown> {
-  const settings = JSON.parse(readFileSync(join(packageRoot(), 'plugin', 'settings.json'), 'utf8')) as Record<string, unknown>
+export function launchSettings(isPinned: boolean, env: Record<string, string> = {}): Record<string, unknown> {
+  const settings = { ...(JSON.parse(readFileSync(join(packageRoot(), 'plugin', 'settings.json'), 'utf8')) as Record<string, unknown>), ...(Object.keys(env).length === 0 ? {} : { env }) }
   if (!isPinned) return settings
   const command = [process.execPath, join(packageRoot(), 'dist', 'feed.js')].map(shellQuoted).join(' ')
   // Only the fullscreen layout has a place to pin it to.
   return { ...settings, tui: 'fullscreen', statusLine: { type: 'command', command } }
 }
 
-export function claudeArgs(extra: string[], isPinned: boolean): string[] {
-  return ['--plugin-dir', join(packageRoot(), 'plugin'), '--settings', JSON.stringify(launchSettings(isPinned)), ...extra]
+export function claudeArgs(extra: string[], isPinned: boolean, env: Record<string, string> = {}): string[] {
+  return ['--plugin-dir', join(packageRoot(), 'plugin'), '--settings', JSON.stringify(launchSettings(isPinned, env)), ...extra]
 }
 
 /** Whether this terminal shows pictures read from a file (the kitty graphics protocol). */
@@ -72,6 +75,16 @@ export function drawsPictures(graphics: 'auto' | 'image' | 'blocks', env: NodeJS
   if (graphics !== 'auto') return graphics === 'image'
   if (env.TMUX || env.SSH_CONNECTION) return false
   return env.TERM_PROGRAM === 'ghostty' || env.TERM === 'xterm-ghostty' || env.TERM === 'xterm-kitty' || Boolean(env.KITTY_WINDOW_ID)
+}
+
+/**
+ * What the mod needs to know about how to draw. In the background Claude Code cannot ask the terminal
+ * whether it shows pictures and takes it that it does not, so where that is known it is told.
+ */
+export function lookEnv(graphics: 'auto' | 'image' | 'blocks', cell: () => string, env: NodeJS.ProcessEnv = process.env): Record<string, string> {
+  if (!drawsPictures(graphics, env)) return { DANTE_GRAPHICS: 'blocks' }
+  const isKnown = graphics === 'image' || env.TERM_PROGRAM === 'ghostty' || env.TERM === 'xterm-ghostty'
+  return { DANTE_GRAPHICS: 'image', DANTE_CELL: cell(), ...(isKnown ? { CLAUDE_CODE_FORCE_TERMINAL_IMAGES: '1' } : {}) }
 }
 
 /** Pixels of one terminal cell, as "7x18". Empty when the terminal does not say. */
@@ -123,18 +136,15 @@ export async function launch(extra: string[]): Promise<number> {
   const isPinned = process.env.DANTE_PINNED_HEADER === '1'
   // Where the session's figures are left for the header.
   const run = isPinned ? mkdtempSync(join(tmpdir(), 'dante-')) : undefined
-  const child = spawn(claude, claudeArgs(extra, isPinned), {
-    stdio: 'inherit',
-    env: {
-      ...process.env,
-      DANTE_HOME: home,
-      DANTE_UI_LANG: lang,
-      DANTE_ANIMATION: animation,
-      DANTE_NODE: process.execPath,
-      ...(run === undefined ? {} : { DANTE_RUN: run }),
-      ...(drawsPictures(graphics) ? { DANTE_GRAPHICS: 'image', DANTE_CELL: cellSize() } : { DANTE_GRAPHICS: 'blocks' }),
-    },
-  })
+  const env: Record<string, string> = {
+    DANTE_HOME: home,
+    DANTE_UI_LANG: lang,
+    DANTE_ANIMATION: animation,
+    DANTE_NODE: process.execPath,
+    ...(run === undefined ? {} : { DANTE_RUN: run, DANTE_PINNED_HEADER: '1' }),
+    ...lookEnv(graphics, cellSize),
+  }
+  const child = spawn(claude, claudeArgs(extra, isPinned, env), { stdio: 'inherit', env: { ...process.env, ...env } })
   // Claude Code reads Ctrl+C itself; this process only waits for it.
   const ignore = () => {}
   process.on('SIGINT', ignore)

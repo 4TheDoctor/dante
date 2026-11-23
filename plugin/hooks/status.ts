@@ -1,4 +1,4 @@
-// The session's figures, as `dist/feed.js` leaves them in $DANTE_RUN/status.json each time Claude Code
+// The session's figures, as `dist/feed.js` leaves them in $DANTE_RUN/<session>.json each time Claude Code
 // runs the status line, and how the header shows them. Every figure is Claude Code's own.
 import type { words } from './words'
 
