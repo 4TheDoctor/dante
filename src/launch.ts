@@ -1,6 +1,6 @@
 import { spawn, spawnSync } from 'node:child_process'
-import { accessSync, constants, copyFileSync, existsSync, mkdirSync } from 'node:fs'
-import { homedir } from 'node:os'
+import { accessSync, constants, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { homedir, tmpdir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { configPath, danteHome, loadConfig } from './config.js'
@@ -48,9 +48,23 @@ export function ensureHome(home = danteHome()): { home: string; created: boolean
   return { home, created }
 }
 
-export function claudeArgs(extra: string[]): string[] {
-  const plugin = join(packageRoot(), 'plugin')
-  return ['--plugin-dir', plugin, '--settings', join(plugin, 'settings.json'), ...extra]
+const shellQuoted = (text: string): string => `'${text.replace(/'/g, `'\\''`)}'`
+
+/**
+ * Claude Code's settings for this session only. With a pinned header the status line's figures go up
+ * there (feed.ts) and the row under the prompt stays empty. Anywhere else the header scrolls away, so
+ * the person's own status line stays as it is.
+ */
+export function launchSettings(isPinned: boolean): Record<string, unknown> {
+  const settings = JSON.parse(readFileSync(join(packageRoot(), 'plugin', 'settings.json'), 'utf8')) as Record<string, unknown>
+  if (!isPinned) return settings
+  const command = [process.execPath, join(packageRoot(), 'dist', 'feed.js')].map(shellQuoted).join(' ')
+  // Only the fullscreen layout has a place to pin it to.
+  return { ...settings, tui: 'fullscreen', statusLine: { type: 'command', command } }
+}
+
+export function claudeArgs(extra: string[], isPinned: boolean): string[] {
+  return ['--plugin-dir', join(packageRoot(), 'plugin'), '--settings', JSON.stringify(launchSettings(isPinned)), ...extra]
 }
 
 /** Whether this terminal shows pictures read from a file (the kitty graphics protocol). */
@@ -106,7 +120,10 @@ export async function launch(extra: string[]): Promise<number> {
   process.chdir(home)
   const tty = process.stdout.isTTY && !process.env.DANTE_NO_BACKDROP
   if (tty) process.stdout.write(`\x1b]11;${BACKDROP}\x07`)
-  const child = spawn(claude, claudeArgs(extra), {
+  const isPinned = process.env.DANTE_PINNED_HEADER === '1'
+  // Where the session's figures are left for the header.
+  const run = isPinned ? mkdtempSync(join(tmpdir(), 'dante-')) : undefined
+  const child = spawn(claude, claudeArgs(extra, isPinned), {
     stdio: 'inherit',
     env: {
       ...process.env,
@@ -114,6 +131,7 @@ export async function launch(extra: string[]): Promise<number> {
       DANTE_UI_LANG: lang,
       DANTE_ANIMATION: animation,
       DANTE_NODE: process.execPath,
+      ...(run === undefined ? {} : { DANTE_RUN: run }),
       ...(drawsPictures(graphics) ? { DANTE_GRAPHICS: 'image', DANTE_CELL: cellSize() } : { DANTE_GRAPHICS: 'blocks' }),
     },
   })
@@ -125,6 +143,7 @@ export async function launch(extra: string[]): Promise<number> {
     child.on('exit', (c, signal) => resolve(c ?? (signal ? 128 : 1)))
     child.on('error', () => resolve(1))
   })
+  if (run !== undefined) rmSync(run, { recursive: true, force: true })
   if (tty) process.stdout.write('\x1b]111\x07')
   return code
 }

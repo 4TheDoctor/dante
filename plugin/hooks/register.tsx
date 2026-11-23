@@ -5,6 +5,7 @@ import type { Journey, TaskList, TransferRow } from '../types'
 import { draw, drawRule, makeScene, toCells, type Scene } from './inferno'
 import { danteTool, declaredSteps, downloadOf, enginesThatFailed, factsFrom, faultAt, FRAME_KINDS, isBroken, isDub, isRefusal, outputText, parseTransfers, pitSize, readFrames, reasonOf, RULE_MOST, ruleParts, ruleSize, shortFacts, STEP_OF, targetOf, taskChange, titleOf } from './parse'
 import { advance, factsAt, isSettled, progressOf, REHEARSAL, stopOf, type Motion, type Progress, type Scene as Stop } from './progress'
+import { gaugeOf, INK, modelPieces, parseStatus, pathPieces, tilesOf, tilesThatFit, type Piece, type Status } from './status'
 import { DANTE, STEPS, words, type Lang } from './words'
 
 // Dante's look for Claude Code ("Inferno"): the laurelled profile in the header, the five circles
@@ -21,6 +22,12 @@ const HEADER_ID = 'header'
 const PINNED_REQUEST_ID = 'dante-header'
 const HEADER_ROWS = 5
 const PORTRAIT = { columns: 10, rows: 4 } as const
+// Beside the portrait: the name, then the session's figures, each a tile. They come from a file the
+// status line command (dist/feed.js) rewrites, read this often.
+const NAME_COLUMNS = 48
+const TILE_COLUMNS = 30
+const GAUGE_CELLS = 20
+const FIGURES_POLL_MS = 1500
 
 const EMBER = '#D9452B'
 const GOLD = '#D4A24C'
@@ -162,6 +169,9 @@ export const register: Register = on => {
   let isPinned = false
   let isFullscreen: boolean | undefined
   let isPlaced = false
+  // The session's figures, when the header shows them.
+  let figures: Status | null = null
+  let figuresText = ''
 
   // The picture. It follows mirrors of the stored values, so a beat costs no round trip.
   let journeyNow: Journey | null = null
@@ -203,7 +213,7 @@ export const register: Register = on => {
     else if (settled.rule === undefined || beats - ruleWanted.since > 4) settled.rule = { columns: ruleWanted.columns }
     return {
       ...(settled.pit === undefined ? {} : { pit: pitSize(settled.pit.columns, settled.pit.rows, cell) }),
-      ...(settled.rule === undefined ? {} : { rule: ruleSize(settled.rule.columns, cell) }),
+      ...(settled.rule === undefined ? {} : { rule: { ...ruleSize(settled.rule.columns, cell), parts: ruleParts(settled.rule.columns).map(columns => ruleSize(columns, cell).width) } }),
     }
   }
 
@@ -400,6 +410,17 @@ export const register: Register = on => {
               ruleColumns = 0
             })
         }
+      })
+    }
+
+    const runDir = await $.env.get('DANTE_RUN')
+    if (runDir) {
+      $.clock.every(FIGURES_POLL_MS, async () => {
+        const text = await $.fs.read(`${runDir}/status.json`).catch(() => '')
+        if (text === '' || text === figuresText) return
+        figuresText = text
+        figures = parseStatus(text) ?? figures
+        $.ui.invalidate('ui.render')
       })
     }
 
@@ -603,12 +624,17 @@ export const register: Register = on => {
     return next(e)
   })
 
-  // Header: laurelled Dante beside name, version, model and folder.
+  // Header: laurelled Dante beside name, version, model and folder, and the session's figures.
   on('ui.render', { component: 'Placed' }, ($, e, next) => {
     if (e.props.plugin !== PLUGIN || e.props.id !== HEADER_ID || header === null || e.surface !== 'terminal') {
       return next(e)
     }
     const { Box, Image, Raster, Text } = $.ui.resolve(e)
+    // The slot is as wide as the terminal; with a pane docked the viewport is the chat's alone.
+    const across = Math.max(1, Math.min(RULE_COLUMNS, (e.viewport?.columns ?? 80) + docked))
+    const inked = (pieces: readonly Piece[]) => pieces.map((piece, n) => <Text key={`piece${n}`} color={piece.color} bold={piece.bold === true}>{piece.text}</Text>)
+    const tiles = figures === null ? [] : tilesOf(figures, words(lang))
+    const shown = tiles.slice(0, tilesThatFit(across, PORTRAIT.columns + NAME_COLUMNS, TILE_COLUMNS, tiles.length))
     const identity = (
       <Box flexDirection="row" height={PORTRAIT.rows}>
         <Image
@@ -617,7 +643,7 @@ export const register: Register = on => {
           rows={PORTRAIT.rows}
           alt="Dante"
         />
-        <Box flexDirection="column" justifyContent="center" paddingLeft={2}>
+        <Box flexDirection="column" justifyContent="center" paddingLeft={2} {...(shown.length > 0 ? { width: NAME_COLUMNS, flexShrink: 0 } : {})}>
           <Text>
             <Text bold color={EMBER}>
               DANTE
@@ -634,11 +660,33 @@ export const register: Register = on => {
               </Text>
             ))}
           </Text>
-          <Text dimColor>
-            {header.model} · Claude Code {header.version}
-          </Text>
-          <Text dimColor>{header.cwd}</Text>
+          {figures === null ? (
+            <Text dimColor>
+              {header.model} · Claude Code {header.version}
+            </Text>
+          ) : (
+            <Text wrap="truncate">
+              {inked(modelPieces(figures))}
+              <Text dimColor> · Claude Code {header.version}</Text>
+            </Text>
+          )}
+          {figures === null ? (
+            <Text dimColor>{header.cwd}</Text>
+          ) : (
+            <Text wrap="truncate">
+              {inked(pathPieces(figures.cwd || header.cwd))}
+              {figures.branch === null ? null : <Text color={INK.cyan}> {words(lang).figures.branch(figures.branch)}</Text>}
+            </Text>
+          )}
         </Box>
+        {shown.map(tile => (
+          <Box key={tile.label} flexDirection="column" width={TILE_COLUMNS} flexShrink={0}>
+            <Text color={INK.dim}>{tile.label}</Text>
+            <Text color={tile.value.color}>{tile.value.text}</Text>
+            <Text>{tile.left === undefined ? ' ' : inked(gaugeOf(tile.left, GAUGE_CELLS))}</Text>
+            <Text>{inked(tile.detail)}</Text>
+          </Box>
+        ))}
       </Box>
     )
     if (e.requestId !== PINNED_REQUEST_ID) {
@@ -650,8 +698,6 @@ export const register: Register = on => {
     }
     // Pinned: exactly HEADER_ROWS tall, closed by a rule of coals the chat scrolls under. It burns
     // while Dante works.
-    // The slot is as wide as the terminal; with a pane docked the viewport is the chat's alone.
-    const across = Math.max(1, Math.min(RULE_COLUMNS, (e.viewport?.columns ?? 80) + docked))
     if (isPicture && (ruleWanted === undefined || ruleWanted.columns !== across)) ruleWanted = { columns: across, since: beats }
     const burning = ruleParts(across).flatMap((columns, n) => {
       const size = ruleSize(columns, cell)

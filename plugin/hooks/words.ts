@@ -36,6 +36,24 @@ type Words = {
   served: readonly string[]
   in: string
   results: (n: number, service: string | undefined) => string
+  /** The session's figures in the header. */
+  figures: {
+    memory: string
+    fiveHour: string
+    sevenDay: string
+    cost: string
+    waiting: string
+    left: (percent: number) => string
+    used: (tokens: string, window: string) => string
+    refillsAt: (clock: string) => string
+    refillsOn: (day: string, clock: string) => string
+    refillUnknown: string
+    session: string
+    lines: string
+    branch: (name: string) => string
+    /** Sunday first. */
+    days: readonly string[]
+  }
 }
 
 const en: Words = {
@@ -89,6 +107,22 @@ const en: Words = {
   served: ['Served', 'Found', 'Unveiled', 'Delivered'],
   in: 'in',
   results: (n, service) => `${n} ${n === 1 ? 'result' : 'results'}${service ? ` on ${service}` : ''}`,
+  figures: {
+    memory: 'CHAT MEMORY',
+    fiveHour: '5-HOUR LIMIT',
+    sevenDay: '7-DAY LIMIT',
+    cost: 'ESTIMATED COST',
+    waiting: 'after the first answer',
+    left: percent => `${percent}% left`,
+    used: (tokens, window) => `${tokens} of ${window} tokens used`,
+    refillsAt: clock => `refills at ${clock}`,
+    refillsOn: (day, clock) => `refills ${day} ${clock}`,
+    refillUnknown: 'refill time not known',
+    session: 'this session',
+    lines: 'lines',
+    branch: name => `branch ${name}`,
+    days: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
+  },
 }
 
 const es: Words = {
@@ -142,6 +176,22 @@ const es: Words = {
   served: ['Servido', 'Hallado', 'Desvelado', 'Entregado'],
   in: 'en',
   results: (n, service) => `${n} ${n === 1 ? 'resultado' : 'resultados'}${service ? ` en ${service}` : ''}`,
+  figures: {
+    memory: 'MEMORIA DEL CHAT',
+    fiveHour: 'LÍMITE DE 5 HORAS',
+    sevenDay: 'LÍMITE DE 7 DÍAS',
+    cost: 'COSTE ESTIMADO',
+    waiting: 'tras la primera respuesta',
+    left: percent => `${percent} % libre`,
+    used: (tokens, window) => `${tokens} de ${window} tokens usados`,
+    refillsAt: clock => `se recarga a las ${clock}`,
+    refillsOn: (day, clock) => `se recarga el ${day} ${clock}`,
+    refillUnknown: 'no se sabe cuándo se recarga',
+    session: 'de esta sesión',
+    lines: 'líneas',
+    branch: name => `rama ${name}`,
+    days: ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'],
+  },
 }
 
 export const words = (lang: Lang): Words => (lang === 'es' ? es : en)
